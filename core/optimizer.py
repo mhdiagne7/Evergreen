@@ -17,7 +17,16 @@ def validate_quantity(quantity):
         raise ValueError("La quantité doit être un entier strictement positif")
 
 
-def compatible_destinations(data, graph, source, model, quantity):
+@dataclass(frozen=True)
+class Destination:
+    room: str
+    free_places: int
+    route: Route | None
+    reasons: tuple[str, ...]
+
+
+def evaluate_destinations(data, graph, source, model, quantity):
+    """Classe toutes les salles ; les exclusions restent explicables."""
     validate_quantity(quantity)
     if source not in data.rooms:
         raise ValueError("Salle source inconnue")
@@ -25,12 +34,27 @@ def compatible_destinations(data, graph, source, model, quantity):
         raise ValueError("Stock source insuffisant pour ce modèle")
     results = []
     for destination, room in data.rooms.items():
-        if destination == source or model not in room.allowed_models or data.available(destination) < quantity:
+        if destination == source:
             continue
         route = shortest_route(graph, source, destination)
-        if route is not None:
-            results.append(Move(source, destination, model, quantity, route))
-    return sorted(results, key=lambda move: (move.route.distance_m, move.destination))
+        free = data.available(destination)
+        reasons = []
+        if model not in room.allowed_models:
+            reasons.append("Modèle non autorisé")
+        if free < quantity:
+            reasons.append(f"Place insuffisante : {free} libre(s) pour {quantity} demandé(s)")
+        if route is None:
+            reasons.append("Aucun chemin renseigné")
+        results.append(Destination(destination, free, route, tuple(reasons)))
+    return sorted(results, key=lambda item: (
+        item.route.distance_m if item.route else float("inf"), item.room
+    ))
+
+
+def compatible_destinations(data, graph, source, model, quantity):
+    return [Move(source, item.room, model, quantity, item.route)
+            for item in evaluate_destinations(data, graph, source, model, quantity)
+            if not item.reasons]
 
 
 @dataclass(frozen=True)

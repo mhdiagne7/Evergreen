@@ -18,5 +18,11 @@ def shortest_route(graph, source, destination):
     except nx.NetworkXNoPath:
         return None
     kinds = {graph[a][b]["distance_type"] for a, b in zip(nodes, nodes[1:])}
-    label = "simulée" if not kinds or kinds == {"simulated"} else "estimée" if kinds == {"estimated"} else "mixte (simulée / estimée)"
+    labels = {"simulated": "simulée", "estimated": "estimée", "measured": "mesurée (déclarée)"}
+    if not kinds:
+        label = "nulle (aucun déplacement)"
+    elif len(kinds) == 1:
+        label = labels[next(iter(kinds))]
+    else:
+        label = "mixte (" + " / ".join(labels[kind] for kind in sorted(kinds)) + ")"
     return Route(nodes, distance, label)

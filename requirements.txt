@@ -1,2 +1,2 @@
-streamlit>=1.45,<2
+streamlit>=1.50,<2
 networkx>=3.4,<4

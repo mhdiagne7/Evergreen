@@ -1,6 +1,7 @@
-"""Lecture et validation stricte des trois CSV de démonstration."""
+"""Lecture des salles, du stock et des liaisons, depuis un dossier ou un import."""
 import csv
 import math
+import io
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,47 +28,82 @@ class Dataset:
         return self.rooms[room].capacity - self.occupied(room)
 
 
-def read_csv(path, columns):
-    with path.open(encoding="utf-8-sig", newline="") as file:
-        reader = csv.DictReader(file)
-        if reader.fieldnames != columns:
-            raise ValueError(f"{path.name} : colonnes attendues {columns}")
-        rows = list(reader)
-    if not rows:
-        raise ValueError(f"{path.name} : fichier vide")
-    if any(None in row or any(v is None or not v.strip() for v in row.values()) for row in rows):
-        raise ValueError(f"{path.name} : ligne incomplète ou mal formée")
-    return [{k: v.strip() for k, v in row.items()} for row in rows]
+SCHEMAS = {
+    "rooms.csv": ["room_id", "building", "capacity", "allowed_models"],
+    "inventory.csv": ["room_id", "model", "quantity"],
+    "connections.csv": ["source", "target", "distance_m", "distance_type"],
+}
+
+
+def read_csv(content, filename):
+    """Accepte les CSV UTF-8 exportés avec des virgules ou points-virgules."""
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as error:
+        raise ValueError(f"{filename} : enregistrer le fichier en CSV UTF-8.") from error
+    header = text.splitlines()[0] if text.splitlines() else ""
+    delimiter = ";" if ";" in header else ","
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    columns = SCHEMAS[filename]
+    if reader.fieldnames is None or len(reader.fieldnames) != len(columns) or set(reader.fieldnames) != set(columns):
+        raise ValueError(f"{filename} : colonnes attendues : {', '.join(columns)}.")
+    rows = []
+    for row in reader:
+        if None in row or any(value is None or not value.strip() for value in row.values()):
+            raise ValueError(f"{filename}, ligne {reader.line_num} : cellule vide ou colonne en trop.")
+        rows.append({key: value.strip() for key, value in row.items()})
+    if not rows and filename == "rooms.csv":
+        raise ValueError("rooms.csv : ajouter au moins une salle.")
+    return rows
+
+
+def whole_number(value, filename, field):
+    try:
+        number = int(value)
+    except ValueError as error:
+        raise ValueError(f"{filename} : {field} doit être un entier (valeur reçue : {value}).") from error
+    return number
 
 
 def load_data(directory=DEMO_DIR):
     directory = Path(directory)
+    return load_csv_files({name: (directory / name).read_bytes() for name in SCHEMAS})
+
+
+def load_csv_files(files):
+    """Valide un jeu complet avant de le rendre disponible, sans écrire de fichier."""
+    missing = set(SCHEMAS) - set(files)
+    if missing:
+        raise ValueError("Fichiers manquants : " + ", ".join(sorted(missing)))
     rooms = {}
-    for row in read_csv(directory / "rooms.csv", ["room_id", "building", "capacity", "allowed_models"]):
+    for row in read_csv(files["rooms.csv"], "rooms.csv"):
         key = row["room_id"]
-        capacity = int(row["capacity"])
+        capacity = whole_number(row["capacity"], "rooms.csv", "capacity")
         models = frozenset(m.strip() for m in row["allowed_models"].split("|"))
         if key in rooms or capacity < 0 or "" in models:
             raise ValueError("Salle dupliquée, capacité négative ou modèle vide")
         rooms[key] = Room(row["building"], capacity, models)
     inventory = {}
-    for row in read_csv(directory / "inventory.csv", ["room_id", "model", "quantity"]):
+    for row in read_csv(files["inventory.csv"], "inventory.csv"):
         room, model = row["room_id"], row["model"]
-        quantity = int(row["quantity"])
+        quantity = whole_number(row["quantity"], "inventory.csv", "quantity")
         if room not in rooms or quantity < 0 or (room, model) in inventory:
             raise ValueError("Inventaire invalide : salle, quantité ou doublon")
         if model not in rooms[room].allowed_models:
             raise ValueError("Modèle présent mais non autorisé dans la salle")
         inventory[room, model] = quantity
     connections, seen = [], set()
-    for row in read_csv(directory / "connections.csv", ["source", "target", "distance_m", "distance_type"]):
+    for row in read_csv(files["connections.csv"], "connections.csv"):
         source, target = row["source"], row["target"]
-        distance = float(row["distance_m"])
+        try:
+            distance = float(row["distance_m"].replace(",", "."))
+        except ValueError as error:
+            raise ValueError("connections.csv : distance_m doit être un nombre en mètres.") from error
         key = frozenset((source, target))
         if source == target or key in seen or not math.isfinite(distance) or distance <= 0:
             raise ValueError("Connexion dupliquée, boucle ou distance invalide")
-        if row["distance_type"] not in {"simulated", "estimated"}:
-            raise ValueError("Type de distance attendu : simulated ou estimated")
+        if row["distance_type"] not in {"simulated", "estimated", "measured"}:
+            raise ValueError("connections.csv : distance_type doit être simulated, estimated ou measured")
         seen.add(key)
         connections.append((source, target, distance, row["distance_type"]))
     dataset = Dataset(rooms, inventory, connections)
