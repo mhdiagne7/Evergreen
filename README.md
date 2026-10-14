@@ -1,29 +1,103 @@
-# 🌿 uOttawa Evergreen Optimizer
+# Evergreen
 
-MVP local de planification de déplacements d'ordinateurs, en français, avec Streamlit et NetworkX. Projet indépendant, sans affiliation officielle à l'Université d'Ottawa.
+Evergreen aide à préparer des déplacements d'ordinateurs : on choisit une salle de départ, un modèle et une quantité, puis l'application propose les salles qui peuvent les accueillir, de la plus proche à la plus éloignée.
 
-**Toutes les salles, connexions, distances, capacités, règles de compatibilité et quantités sont fictives.** Les noms MRT, UCU, STE et CBY sont une inspiration nominale. Ce projet ne représente ni un plan du campus, ni son inventaire, ni ses passages intérieurs réels.
+Le projet commence avec un petit jeu de données fictives inspiré des noms MRT, UCU, STE et CBY de uOttawa. Les salles, liaisons, distances et inventaires de démonstration sont inventés. Ils ne décrivent pas le campus et le projet n'est pas affilié à l'université.
 
-## Démarrage sur Mac
+## Ouvrir l'application sur ce Mac
 
-Installer Python 3.11 ou 3.12 et Git, puis ouvrir Terminal :
+Le dossier se trouve maintenant dans **Documents/Evergreen**. Dans Finder, ouvrir ce dossier et double-cliquer sur **Lancer-Evergreen.command**. Garder la fenêtre du Terminal ouverte pendant l'utilisation.
+
+On peut aussi la lancer depuis Terminal :
 
 ```sh
+cd ~/Documents/Evergreen
+.venv/bin/python -m streamlit run app.py
+```
+
+L'application est accessible sur http://127.0.0.1:8501. Pour l'arrêter, utiliser Ctrl+C dans le Terminal.
+
+Si une ancienne fenêtre affiche une erreur « No such file or directory » avec un chemin contenant `.codex`, arrêter le serveur dans cette fenêtre avec Ctrl+C, puis utiliser le lanceur depuis Documents. Le lanceur retrouve le projet à partir de son propre emplacement ; il n'utilise aucun ancien chemin absolu. Un port déjà occupé signifie généralement qu'une autre instance tourne encore.
+
+## Ce que fait l'application
+
+### Trouver une salle
+
+1. Choisir la salle source et le modèle présent dans cette salle.
+2. Indiquer combien d'ordinateurs déplacer.
+3. Consulter la salle conseillée, les alternatives et leur chemin.
+
+Une destination est proposée si elle autorise le modèle, possède assez de places pour **tout le lot** et dispose d'un chemin depuis la source. La capacité libre tient compte de tous les modèles déjà présents. La salle source n'est pas une destination.
+
+Le classement suit la distance totale du plus court chemin. À distance égale, les noms de salles servent à stabiliser l'ordre ; aucune salle n'est considérée meilleure sur un autre critère. La liste des exclusions explique les refus : modèle non autorisé, manque de place ou absence de chemin.
+
+Exemple : 10 Dell OptiPlex 7050 depuis MRT 1140 donnent MRT 120 à 50 m, UCU 214 à 195 m et STE 1030 à 490 m. Ces distances sont simulées. Chaque ligne est une alternative : exporter la liste ne réserve aucune place.
+
+### Vérifier un trajet
+
+Choisir deux salles pour obtenir le chemin et sa distance. Le calcul utilise Dijkstra avec NetworkX. Il minimise la somme des distances renseignées, et non le nombre de couloirs traversés. Les connexions sont bidirectionnelles. Une salle peut être isolée ; dans ce cas, l'application signale l'absence de trajet. Un trajet vers la même salle vaut 0 m.
+
+### Préparer un regroupement
+
+Choisir un modèle, une salle cible et le nombre d'ordinateurs **supplémentaires** à y rassembler. Le plan prend le stock des sources accessibles les plus proches, dans la limite de leur stock et des places libres de la cible. Il indique séparément la quantité prévue et la demande non satisfaite.
+
+Exemple : ajouter 25 Dell OptiPlex 7050 dans UCU 214 produit un plan de 18 unités : 10 depuis MRT 1140 et 8 depuis MRT 120. La cible contient déjà 12 ordinateurs pour 30 places. Les 7 unités restantes ne peuvent pas être ajoutées.
+
+Les plans restent indépendants. Ils ne modifient pas l'inventaire, ne réservent pas les stocks et ne doivent pas être additionnés sans revue. L'indicateur ordinateur·m est la somme quantité × distance ; il ne représente pas un temps de travail ni une tournée de chariot.
+
+## Quand les nouvelles données seront disponibles
+
+Dans la barre latérale, ouvrir **Importer mes CSV**, sélectionner les trois fichiers puis cliquer sur **Vérifier et utiliser ces données**. Les nouveaux bâtiments, salles et modèles apparaissent automatiquement. Il n'y a rien à changer dans le code.
+
+L'import remplace le jeu complet, sans le mélanger à la démonstration. Si un fichier est invalide, les données actives restent intactes. Les choix de salles et modèles repartent à zéro après un import réussi. Le bouton **Revenir à la démonstration** recharge les exemples.
+
+Les fichiers importés restent dans la mémoire de cette session locale ; ils ne sont pas copiés dans le dépôt. Conserver les originaux : une nouvelle session ou un redémarrage nécessite de les importer à nouveau. Utiliser l'application localement avec des fichiers dont l'usage est autorisé.
+
+### Format attendu
+
+Télécharger les exemples CSV dans la barre latérale pour avoir un modèle. Les fichiers doivent être en UTF-8. Les virgules et points-virgules sont acceptés comme séparateurs ; l'ordre des colonnes peut changer, mais leurs noms doivent correspondre exactement.
+
+| Fichier | Colonnes | Contenu |
+|---|---|---|
+| `rooms.csv` | `room_id,building,capacity,allowed_models` | Identifiant unique, bâtiment, capacité entière ≥ 0 et modèles autorisés séparés par `\|` |
+| `inventory.csv` | `room_id,model,quantity` | Une ligne par paire salle/modèle ; quantité entière ≥ 0 |
+| `connections.csv` | `source,target,distance_m,distance_type` | Deux points reliés, distance en mètres strictement positive, type de distance |
+
+Une salle d'inventaire doit exister et autoriser le modèle indiqué. Le total de son inventaire ne peut pas dépasser sa capacité. Les doublons, cellules vides et distances négatives ou non finies sont refusés. Au moins une salle est nécessaire ; un inventaire ou un réseau vide est accepté avec seulement ses en-têtes.
+
+Les points de connexion qui ne sont pas des salles représentent des points de passage, par exemple un hall. L'application les affiche pour permettre une vérification : une faute de frappe dans le nom d'une salle pourrait sinon passer pour un hall. Les groupes de points sans liaison entre eux sont également signalés.
+
+Valeurs de `distance_type` :
+
+- `simulated` : distance inventée pour un essai.
+- `estimated` : distance approximative.
+- `measured` : distance déclarée mesurée dans le fichier ; l'application ne vérifie pas cette mesure.
+
+Un trajet contenant plusieurs types est affiché comme mixte. Importer un fichier ne transforme jamais ses distances simulées en distances réelles.
+
+Pour Excel en français, exporter en **CSV UTF-8** avec séparateur point-virgule ; les décimales avec virgule sont acceptées. Un fichier `.xlsx` ne peut pas être importé directement. Si les futures données ont un autre format, il faudra d'abord les convertir vers ces trois tableaux.
+
+## Installation sur un autre ordinateur
+
+Prérequis : Git et Python 3.11 ou 3.12. Le Python 3.9 fourni avec certains Mac est trop ancien. Internet est nécessaire pour installer les dépendances ; les calculs utilisent ensuite les fichiers locaux.
+
+### Mac
+
+```sh
+cd ~/Documents
 git clone --branch feat/evergreen-mvp https://github.com/mhdiagne7/Evergreen.git
 cd Evergreen
 python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m streamlit run app.py
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m streamlit run app.py
 ```
 
-Avec Python 3.11, remplacer `python3.12` par `python3.11`. Le Python 3.9 livré avec certains Mac est trop ancien.
+Remplacer `python3.12` par `python3.11` si nécessaire. Pour les prochains lancements, double-cliquer sur `Lancer-Evergreen.command`. Après un déplacement ou une copie vers une autre machine, recréer `.venv` si l'environnement Python ne fonctionne plus ; ce dossier n'est pas portable.
 
-## Démarrage sur Windows
-
-Installer Python 3.11 ou 3.12 et Git, puis ouvrir PowerShell :
+### Windows — PowerShell
 
 ```powershell
+cd ([Environment]::GetFolderPath('MyDocuments'))
 git clone --branch feat/evergreen-mvp https://github.com/mhdiagne7/Evergreen.git
 cd Evergreen
 py -3.12 -m venv .venv
@@ -31,77 +105,36 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-Avec Python 3.11, utiliser `py -3.11`. Ces commandes n'exigent pas d'activer un script PowerShell. Après fusion de la PR, un simple `git clone` sans `--branch` utilisera la version de `main`.
+Avec Python 3.11, utiliser `py -3.11`. Ensuite, `Lancer-Evergreen.bat` permet de démarrer l'application par double-clic. Aucun script d'activation PowerShell n'est nécessaire.
 
-Ouvrir http://127.0.0.1:8501 ; arrêter avec Ctrl+C. L'installation nécessite Internet ; les calculs utilisent ensuite les fichiers locaux. Aucun compte ni clé API requis. L'écoute est limitée à la machine locale et la collecte de statistiques Streamlit est désactivée.
+## Organisation du code
 
-## Parcours de démonstration
+- `app.py` : interface, saisie et affichage des résultats.
+- `core/data.py` : lecture et validation des trois CSV.
+- `core/graph.py` et `core/routing.py` : réseau et calcul des chemins.
+- `core/optimizer.py` : classement des destinations et préparation des regroupements.
+- `core/session.py` : activation d'un import complet.
+- `core/export.py` : export CSV, avec protection contre les formules de tableur dans les libellés.
+- `data/demo/` : exemples fictifs conservés dans Git.
+- `tests/` : tests métier et tests de l'interface.
 
-1. **Trajet** : MRT 1140 → UCU 214 donne **195 m simulés** via MRT Hall, MRT Exit et UCU Entry. Une même source/destination donne 0 m ; une salle isolée ne donne aucun chemin.
-2. **Destinations compatibles** : déplacer 10 Dell OptiPlex 7050 de MRT 1140 propose MRT 120 (50 m), UCU 214 (195 m), STE 1030 (490 m). Chaque résultat est une alternative, pas un plan cumulatif.
-3. **Regroupement Evergreen** : demander 25 Dell OptiPlex 7050 supplémentaires dans UCU 214 propose 10 depuis MRT 1140 et 8 depuis MRT 120. Les 12 ordinateurs existants laissent 18 places : il reste donc 7 unités non satisfaites. Exporter la proposition en CSV si nécessaire.
-4. **Données fictives** : consulter les capacités, modèles autorisés et inventaires mixtes.
+## Vérifier une modification
 
-La compatibilité signifie : modèle explicitement autorisé, stock source suffisant, destination différente, chemin disponible et capacité totale suffisante **tous modèles confondus**. Elle ne constitue pas une évaluation technique réelle du matériel.
-
-Le regroupement collecte un modèle vers une cible, depuis les sources accessibles par distance croissante. Il peut fractionner le stock d'une source. La quantité demandée est **supplémentaire** à l'inventaire de la cible. Chaque calcul repart des données initiales : aucune écriture, réservation ou exécution des déplacements. L'effort en ordinateur·m est la somme quantité × distance ; ce n'est pas une durée ni une distance de tournée.
-
-## Structure
-
-```text
-app.py                  Interface Streamlit
-core/data.py            CSV et validation
-core/graph.py           Graphe bidirectionnel
-core/routing.py         Dijkstra et absence de chemin
-core/optimizer.py       Compatibilité et regroupement élémentaire
-data/demo/              Trois CSV entièrement fictifs
-tests/                  Tests métier et interactions Streamlit
-ci/                     Configuration CI prête à activer
-```
-
-Le code métier ne dépend pas de Streamlit. Les chemins de données sont résolus depuis le code, sans chemin absolu lié au poste.
-
-## Format des données
-
-CSV UTF-8 avec en-têtes exacts, dans l'ordre indiqué :
-
-| Fichier | Colonnes | Règles |
-|---|---|---|
-| `rooms.csv` | `room_id,building,capacity,allowed_models` | Salle unique ; capacité entière ≥ 0 ; modèles séparés par `\|` |
-| `inventory.csv` | `room_id,model,quantity` | Paire salle/modèle unique ; quantité entière ≥ 0 ; salle existante ; modèle autorisé |
-| `connections.csv` | `source,target,distance_m,distance_type` | Distance finie > 0 ; pas de boucle ni doublon non orienté ; `simulated` ou `estimated` |
-
-Les points de connexion absents de `rooms.csv` sont des points de transit, sans inventaire. Une salle sans connexion reste valide mais inaccessible. Les inventaires qui dépassent une capacité sont rejetés. Les lignes incomplètes, colonnes incorrectes et fichiers vides sont rejetés avec un message dans l'interface.
-
-**Simulée** signifie inventée pour la démonstration. **Estimée** signifie une approximation explicitement renseignée ; aucune distance estimée n'est fournie ici. Un chemin mélangeant les deux est marqué mixte. Aucune distance n'est présentée comme mesurée ou réelle.
-
-## Vérification
-
-Dans l'environnement virtuel sur Mac :
+Sur Mac, depuis le dossier du projet :
 
 ```sh
-python -m pip install -r requirements-dev.txt
-python -m pytest -q
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q
 ```
 
-Sur Windows :
+Sur Windows, remplacer `.venv/bin/python` par `.\.venv\Scripts\python.exe`.
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest -q
-```
+La configuration `ci/github-actions-tests.yml` prépare les tests Linux, macOS et Windows, avec Python 3.11 et 3.12. Elle est inactive pour le moment : sa publication sous `.github/workflows/tests.yml` demande une permission GitHub `workflow` absente lors de la mise en place. Les vérifications locales sont faites sur Mac ; cela ne vaut pas une vérification Windows. Les versions des dépendances sont bornées, mais pas complètement verrouillées.
 
-Les tests couvrent les distances pondérées, trajets nuls et impossibles, compatibilité, stock, capacités mixtes, regroupements partiels, conservation des quantités, absence de mutation, CSV invalides et interactions de l'interface. La configuration `ci/github-actions-tests.yml` prévoit Python 3.11/3.12 sur Linux, macOS et Windows. Elle reste inactive : le jeton Git utilisé pour la livraison ne possède pas le droit `workflow`. Pour activer la CI, déplacer ce fichier vers `.github/workflows/tests.yml` puis publier avec un accès autorisé. Les tests locaux ont été exécutés sur macOS avec Python 3.12 ; les autres plateformes restent à vérifier par cette CI. Les dépendances utilisent des bornes de version majeure ; elles ne sont pas entièrement verrouillées.
+## Limites et données internes
 
-## Données internes et limites
+Le projet ne connaît pas les escaliers, ascenseurs, accès fermés, horaires, durées de transport ou contraintes de chariot. Le regroupement vise une seule cible ; il ne calcule pas un plan global pour tout le campus et n'applique pas une politique officielle de renouvellement Evergreen.
 
-Conserver les données réelles hors du dépôt, idéalement dans un emplacement contrôlé par votre organisation. `.gitignore` exclut les données hors `data/demo/`, `private/`, `internal/`, `exports/`, secrets, bases et classeurs. Cette exclusion ne protège pas un fichier déjà suivi ni un ajout forcé : examiner `git diff --cached` avant chaque commit. Ne jamais remplacer les CSV de démonstration par de vrais inventaires dans une branche publiée.
+Conserver les vrais fichiers hors du dépôt. `.gitignore` exclut les dossiers `private/`, `internal/`, `exports/`, les données hors démonstration, secrets et bases locales. Un fichier déjà suivi par Git reste suivi : vérifier les changements avant toute publication. Ne pas remplacer les exemples de `data/demo/` par un inventaire interne.
 
-Le MVP ne charge que `data/demo/` et ne propose pas d'import de données internes. Aucun plan géographique n'est inventé ou récupéré. Le graphe ne décrit ni accessibilité, escaliers, horaires, étages, obstacles ni règles de sécurité. Le regroupement est une heuristique simple à cible unique : pas de plan global multi-salles, durée, chariot, budget, âge matériel ou politique officielle Evergreen. Il ne doit pas être utilisé pour des déplacements réels sans données validées et revue humaine.
-
-Pour évoluer : ajouter des contraintes validées, importer des données autorisées hors dépôt, puis comparer plusieurs cibles et suivre les mouvements approuvés.
-
-## Références techniques
-
-- [Streamlit : tests d'application](https://docs.streamlit.io/develop/api-reference/app-testing/st.testing.v1.apptest)
-- [NetworkX : Dijkstra](https://networkx.org/documentation/stable/reference/algorithms/shortest_paths/dijkstra.html)
+Références : [NetworkX — Dijkstra](https://networkx.org/documentation/stable/reference/algorithms/shortest_paths/dijkstra.html), [Streamlit — import de fichiers](https://docs.streamlit.io/develop/api-reference/widgets/st.file_uploader).
