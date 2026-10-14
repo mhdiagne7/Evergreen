@@ -1,0 +1,7 @@
+room_id,building,capacity,allowed_models
+MRT 1140,MRT,20,Dell OptiPlex 7050|Dell OptiPlex 7060
+MRT 120,MRT,25,Dell OptiPlex 7050
+UCU 214,UCU,30,Dell OptiPlex 7050|Dell OptiPlex 7060
+STE 1030,STE,20,Dell OptiPlex 7050
+CBY 120,CBY,25,Dell OptiPlex 7060
+CBY 210,CBY,20,HP EliteDesk 800
