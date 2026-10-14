@@ -4,7 +4,7 @@ Evergreen aide à préparer des déplacements d'ordinateurs : on choisit une sal
 
 Le projet commence avec un petit jeu de données fictives inspiré des noms MRT, UCU, STE et CBY de uOttawa. Les salles, liaisons, distances et inventaires de démonstration sont inventés. Ils ne décrivent pas le campus et le projet n'est pas affilié à l'université.
 
-## Ouvrir l'application sur ce Mac
+## Ouvrir l'application sur cette ordi
 
 Le dossier se trouve maintenant dans **Documents/Evergreen**. Dans Finder, ouvrir ce dossier et double-cliquer sur **Lancer-Evergreen.command**. Garder la fenêtre du Terminal ouverte pendant l'utilisation.
 
