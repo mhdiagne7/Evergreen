@@ -1,85 +1,122 @@
 # Evergreen
 
-Evergreen aide à préparer des déplacements d'ordinateurs : on choisit une salle de départ, un modèle et une quantité, puis l'application propose les salles qui peuvent les accueillir, de la plus proche à la plus éloignée.
+Evergreen prépare les renouvellements d'ordinateurs **par bâtiment**, puis donne les interventions à effectuer dans chaque salle. Il conserve l'inventaire courant et le met à jour quand les déplacements sont confirmés.
 
-Le projet commence avec un petit jeu de données fictives inspiré des noms MRT, UCU, STE et CBY de uOttawa. Les salles, liaisons, distances et inventaires de démonstration sont inventés. Ils ne décrivent pas le campus et le projet n'est pas affilié à l'université.
+Le fonctionnement repose sur deux choses distinctes :
 
-## Ouvrir l'application sur ce Mac
+- **Le référentiel** : bâtiments, salles, capacités et distances. Les CSV de l'université servent à le créer et ne sont jamais écrasés par les opérations.
+- **L'inventaire vivant** : modèles présents dans les classes, stock en réserve, arrivages et déplacements réalisés. Il est enregistré dans une base locale avec un historique.
 
-Le dossier se trouve maintenant dans **Documents/Evergreen**. Dans Finder, ouvrir ce dossier et double-cliquer sur **Lancer-Evergreen.command**. Garder la fenêtre du Terminal ouverte pendant l'utilisation.
+La démonstration est entièrement fictive. CBY y compte 25 classes à un poste, avec des modèles 7060, 7090, 7086 et 5043. MRT, UCU et STE possèdent aussi des classes et des réserves. Ces salles et distances ne représentent pas le campus réel. Ce projet n'est pas un outil officiel de l'université.
 
-On peut aussi la lancer depuis Terminal :
+## Lancer sur ce Mac
+
+Ouvrir **Documents/Evergreen**, puis double-cliquer sur **Lancer-Evergreen.command**. Ou utiliser Terminal :
 
 ```sh
 cd ~/Documents/Evergreen
 .venv/bin/python -m streamlit run app.py
 ```
 
-L'application est accessible sur http://127.0.0.1:8501. Pour l'arrêter, utiliser Ctrl+C dans le Terminal.
+Ouvrir http://127.0.0.1:8501. Garder le Terminal ouvert et utiliser Ctrl+C pour arrêter le serveur. Les données enregistrées restent disponibles au prochain lancement.
 
-Si une ancienne fenêtre affiche une erreur « No such file or directory » avec un chemin contenant `.codex`, arrêter le serveur dans cette fenêtre avec Ctrl+C, puis utiliser le lanceur depuis Documents. Le lanceur retrouve le projet à partir de son propre emplacement ; il n'utilise aucun ancien chemin absolu. Un port déjà occupé signifie généralement qu'une autre instance tourne encore.
+Une erreur de chemin contenant `.codex` vient d'une ancienne instance : l'arrêter avec Ctrl+C, puis utiliser le lanceur dans Documents. Le lanceur retrouve le projet depuis son propre dossier. Si le port 8501 est occupé, vérifier si une autre instance est déjà ouverte.
 
-## Ce que fait l'application
+## Exemple : préparer CBY
 
-### Trouver une salle
+Dans **Vue par bâtiment**, consulter les quantités installées et les réserves, par bâtiment puis par modèle. Le détail d'un bâtiment montre chaque salle et son modèle actuel. Les postes en réserve sont séparés de ceux déjà utilisés dans une classe.
 
-1. Choisir la salle source et le modèle présent dans cette salle.
-2. Indiquer combien d'ordinateurs déplacer.
-3. Consulter la salle conseillée, les alternatives et leur chemin.
+Dans **Planifier Evergreen** :
 
-Une destination est proposée si elle autorise le modèle, possède assez de places pour **tout le lot** et dispose d'un chemin depuis la source. La capacité libre tient compte de tous les modèles déjà présents. La salle source n'est pas une destination.
+1. Choisir CBY.
+2. Sélectionner les modèles 7060 et 7090.
+3. Demander **15 classes en 7060 et 10 classes en 7090**. Ce sont des totaux souhaités après les travaux, pas des quantités à ajouter : les classes déjà conformes comptent.
+4. Choisir la réserve de CBY où déposer les anciens ordinateurs.
+5. Calculer les propositions et vérifier le tableau avant/après.
+6. Consulter le transport entre bâtiments puis les interventions salle par salle : modèle actuel, modèle à installer et provenance.
+7. Exporter la feuille de route et enregistrer le lot à réaliser.
 
-Le classement suit la distance totale du plus court chemin. À distance égale, les noms de salles servent à stabiliser l'ordre ; aucune salle n'est considérée meilleure sur un autre critère. La liste des exclusions explique les refus : modèle non autorisé, manque de place ou absence de chemin.
+Enregistrer un lot **ne modifie aucun stock**. Il n'effectue pas non plus de réservation. On peut préparer plusieurs scénarios, mais une mise à jour de l'inventaire rend les autres scénarios anciens : ils devront être recalculés.
 
-Exemple : 10 Dell OptiPlex 7050 depuis MRT 1140 donnent MRT 120 à 50 m, UCU 214 à 195 m et STE 1030 à 490 m. Ces distances sont simulées. Chaque ligne est une alternative : exporter la liste ne réserve aucune place.
+### Comment sont choisies les propositions ?
 
-### Vérifier un trajet
+Le plan conserve en priorité les classes déjà conformes aux objectifs. Il cherche ensuite le matériel en réserve, puis classe les livraisons possibles par distance du plus court chemin. Les noms servent à départager les égalités. Les modèles sont traités par ordre alphabétique : c'est une méthode simple et prévisible, pas un optimiseur global de toutes les tournées.
 
-Choisir deux salles pour obtenir le chemin et sa distance. Le calcul utilise Dijkstra avec NetworkX. Il minimise la somme des distances renseignées, et non le nombre de couloirs traversés. Les connexions sont bidirectionnelles. Une salle peut être isolée ; dans ce cas, l'application signale l'absence de trajet. Un trajet vers la même salle vaut 0 m.
+Par défaut, le plan ne prélève pas un ordinateur installé dans une autre classe. L'option **Autoriser les échanges avec des classes d'autres bâtiments** permet ce cas : le poste retiré de la classe cible est alors remis dans la classe source. La source doit accepter ce modèle. Même avec cette option, le matériel disponible en réserve reste prioritaire sur un poste installé plus proche.
 
-### Préparer un regroupement
+Une intervention suit cet ordre :
 
-Choisir un modèle, une salle cible et le nombre d'ordinateurs **supplémentaires** à y rassembler. Le plan prend le stock des sources accessibles les plus proches, dans la limite de leur stock et des places libres de la cible. Il indique séparément la quantité prévue et la demande non satisfaite.
+1. Retirer l'ancien poste vers la réserve de retour du bâtiment cible.
+2. Acheminer le nouveau poste depuis sa source vers la classe cible.
+3. Dans le cas d'un échange, acheminer l'ancien poste de la réserve vers la classe source.
 
-Exemple : ajouter 25 Dell OptiPlex 7050 dans UCU 214 produit un plan de 18 unités : 10 depuis MRT 1140 et 8 depuis MRT 120. La cible contient déjà 12 ordinateurs pour 30 places. Les 7 unités restantes ne peuvent pas être ajoutées.
+La réserve doit avoir une place libre pour le transit ; toutes les étapes doivent avoir un chemin et respecter les capacités. Les vieux ordinateurs ne disparaissent pas de l'inventaire. Un échange conserve aussi le poste de la classe source. Une classe initialement vide peut recevoir un poste de réserve ; le plan ne vide pas une autre classe pour la remplir.
 
-Les plans restent indépendants. Ils ne modifient pas l'inventaire, ne réservent pas les stocks et ne doivent pas être additionnés sans revue. L'indicateur ordinateur·m est la somme quantité × distance ; il ne représente pas un temps de travail ni une tournée de chariot.
+Si le stock, les chemins ou la place de retour manquent, le plan est partiel et affiche le nombre de classes restant à équiper. Ajouter un modèle au catalogue ne crée pas de stock : les arrivages doivent être enregistrés séparément.
 
-## Quand les nouvelles données seront disponibles
+Le remplacement automatique vise les classes de capacité **1**. Les salles de plusieurs postes restent visibles dans le tableau de bord et dans la recherche de destinations, mais ne sont pas remplacées automatiquement.
 
-Dans la barre latérale, ouvrir **Importer mes CSV**, sélectionner les trois fichiers puis cliquer sur **Vérifier et utiliser ces données**. Les nouveaux bâtiments, salles et modèles apparaissent automatiquement. Il n'y a rien à changer dans le code.
+## Mettre à jour après les travaux
 
-L'import remplace le jeu complet, sans le mélanger à la démonstration. Si un fichier est invalide, les données actives restent intactes. Les choix de salles et modèles repartent à zéro après un import réussi. Le bouton **Revenir à la démonstration** recharge les exemples.
+Dans **Lots et historique**, ouvrir le lot puis sélectionner les salles dont l'intervention est **entièrement terminée**. Ajouter une note de réalisation, cocher la confirmation physique, puis cliquer sur **Mettre à jour l'inventaire**.
 
-Les fichiers importés restent dans la mémoire de cette session locale ; ils ne sont pas copiés dans le dépôt. Conserver les originaux : une nouvelle session ou un redémarrage nécessite de les importer à nouveau. Utiliser l'application localement avec des fichiers dont l'usage est autorisé.
+On peut confirmer une partie du lot et revenir plus tard pour le reste. Pour une salle, les étapes de retrait, livraison et éventuel retour sont indivisibles : ne pas la cocher si une étape manque. Suivre l'ordre de la feuille de route ; une opération peut réutiliser du stock provenant d'une étape précédente.
 
-### Format attendu
+Lors de la confirmation, l'application vérifie à nouveau les quantités et les capacités. Toute la confirmation est enregistrée ensemble ; en cas d'erreur, aucun de ses mouvements n'est appliqué. Une opération déjà confirmée ne peut pas l'être une deuxième fois. Les totaux par bâtiment se mettent à jour au même moment.
 
-Télécharger les exemples CSV dans la barre latérale pour avoir un modèle. Les fichiers doivent être en UTF-8. Les virgules et points-virgules sont acceptés comme séparateurs ; l'ordre des colonnes peut changer, mais leurs noms doivent correspondre exactement.
+Annuler le reste d'un lot ne revient pas sur ce qui a déjà été réalisé. L'historique conserve la date UTC, la note et le détail des mouvements. Les erreurs d'enregistrement nécessitent une revue ; il n'y a pas encore d'annulation automatique d'un déplacement réalisé.
 
-| Fichier | Colonnes | Contenu |
+## Nouveaux modèles et arrivages
+
+Dans **Stock et modèles** :
+
+- Ajouter un modèle au catalogue, sans changer les quantités.
+- Enregistrer un arrivage dans une réserve existante, avec une quantité et une provenance.
+- Confirmer la réception physique avant l'enregistrement.
+
+L'application vérifie la capacité de la réserve et les modèles autorisés. Les classes ne sont pas utilisées comme réserve par défaut. Les sorties définitives, mises au rebut et corrections libres de stock ne sont pas encore proposées ; les retours des classes restent dans l'inventaire. Le stock en réserve est considéré réutilisable : ne pas y compter du matériel hors service sans traitement préalable.
+
+## Importer les données de l'université
+
+Dans la barre latérale, **Créer un inventaire depuis des CSV** crée un nouvel espace indépendant. Donner un nom et sélectionner les trois fichiers. Les autres espaces, leurs stocks et leurs historiques sont conservés. Choisir ensuite le nouvel espace dans la liste.
+
+Importer une fois le référentiel et l'inventaire initial. Pour le travail courant, utiliser les arrivages et les confirmations de lots ; ne pas réimporter les CSV initiaux après chaque déplacement. Ils ne représentent plus l'état courant après les premières opérations.
+
+Les fichiers doivent être en UTF-8, avec une virgule ou un point-virgule comme séparateur. Les colonnes peuvent être dans un ordre différent. Les exemples téléchargeables dans l'application sont fictifs.
+
+| Fichier | Colonnes | Règles |
 |---|---|---|
-| `rooms.csv` | `room_id,building,capacity,allowed_models` | Identifiant unique, bâtiment, capacité entière ≥ 0 et modèles autorisés séparés par `\|` |
-| `inventory.csv` | `room_id,model,quantity` | Une ligne par paire salle/modèle ; quantité entière ≥ 0 |
-| `connections.csv` | `source,target,distance_m,distance_type` | Deux points reliés, distance en mètres strictement positive, type de distance |
+| `rooms.csv` | `room_id,building,capacity,allowed_models,room_type` | Identifiant unique ; capacité entière ≥ 0 ; usage `classroom` ou `storage` |
+| `inventory.csv` | `room_id,model,quantity` | Une ligne par paire salle/modèle, quantité entière ≥ 0 |
+| `connections.csv` | `source,target,distance_m,distance_type` | Connexion bidirectionnelle, distance finie strictement positive |
 
-Une salle d'inventaire doit exister et autoriser le modèle indiqué. Le total de son inventaire ne peut pas dépasser sa capacité. Les doublons, cellules vides et distances négatives ou non finies sont refusés. Au moins une salle est nécessaire ; un inventaire ou un réseau vide est accepté avec seulement ses en-têtes.
+Dans `rooms.csv`, utiliser `capacity=1` pour une classe à un poste. Décrire aussi les vraies réserves, leur bâtiment et leur capacité. Ne pas inventer de réserve si aucune n'existe : il faut alors définir le lieu de retour réel avant de planifier.
 
-Les points de connexion qui ne sont pas des salles représentent des points de passage, par exemple un hall. L'application les affiche pour permettre une vérification : une faute de frappe dans le nom d'une salle pourrait sinon passer pour un hall. Les groupes de points sans liaison entre eux sont également signalés.
+`allowed_models` accepte une liste séparée par `|`, ou `*` pour autoriser tout modèle du catalogue. Avec une liste fermée, l'ajout d'un nouveau modèle au catalogue ne modifie pas les autorisations de la salle. La colonne `room_type` est facultative pour les anciens fichiers ; une salle sans cette colonne est considérée comme une classe, jamais comme une réserve.
 
-Valeurs de `distance_type` :
+Les trois types de distance sont `simulated` (inventée), `estimated` (approximative) et `measured` (déclarée mesurée dans le fichier, sans contrôle indépendant). Un chemin mélangeant plusieurs types est indiqué comme mixte. Les points présents dans les liaisons mais absents des salles sont des points de transit ; vérifier leur orthographe.
 
-- `simulated` : distance inventée pour un essai.
-- `estimated` : distance approximative.
-- `measured` : distance déclarée mesurée dans le fichier ; l'application ne vérifie pas cette mesure.
+Les salles inconnues dans l'inventaire, doublons, cellules manquantes, modèles incompatibles et dépassements de capacité sont refusés. Un inventaire ou réseau vide peut contenir seulement ses en-têtes. Une salle isolée reste dans l'inventaire, mais ne peut pas participer à un déplacement sans chemin.
 
-Un trajet contenant plusieurs types est affiché comme mixte. Importer un fichier ne transforme jamais ses distances simulées en distances réelles.
+Les fichiers Excel `.xlsx` doivent d'abord être exportés ou convertis en ces trois CSV. Si les données réelles ont un autre schéma, une étape de correspondance des colonnes sera nécessaire. Le référentiel n'est pas modifiable dans l'interface actuelle : un référentiel révisé crée un nouvel espace à partir de l'inventaire courant exporté, avec conservation de l'ancien espace pour son historique.
 
-Pour Excel en français, exporter en **CSV UTF-8** avec séparateur point-virgule ; les décimales avec virgule sont acceptées. Un fichier `.xlsx` ne peut pas être importé directement. Si les futures données ont un autre format, il faudra d'abord les convertir vers ces trois tableaux.
+## Conservation et sauvegarde
+
+L'application enregistre les espaces, stocks, catalogues, lots et historiques dans :
+
+```text
+Documents/Evergreen/private/evergreen.sqlite3
+```
+
+Le chemin est relatif au projet. Les fichiers de démonstration ne sont jamais modifiés. SQLite est fourni avec Python ; aucun serveur de base de données supplémentaire n'est nécessaire.
+
+Dans **Stock et modèles**, on peut exporter l'inventaire courant ou préparer puis télécharger une sauvegarde complète. Cette sauvegarde contient **tous** les espaces et leur historique au moment de sa préparation. La conserver dans un emplacement autorisé. Pour restaurer : arrêter l'application, mettre de côté la base actuelle, placer la sauvegarde dans `private/evergreen.sqlite3`, puis relancer. Exporter seulement `inventory.csv` permet de récupérer les quantités, mais pas les lots ni l'historique.
+
+La base est locale, sans synchronisation entre ordinateurs ni gestion des comptes. Elle n'est pas chiffrée par l'application. Les protections du poste et les règles de l'université s'appliquent. `.gitignore` exclut `private/`, les exports, bases et fichiers internes ; ne jamais forcer leur ajout à Git. Les fichiers déjà suivis restent suivis : ne pas remplacer les exemples publiés par de vraies données.
 
 ## Installation sur un autre ordinateur
 
-Prérequis : Git et Python 3.11 ou 3.12. Le Python 3.9 fourni avec certains Mac est trop ancien. Internet est nécessaire pour installer les dépendances ; les calculs utilisent ensuite les fichiers locaux.
+Prérequis : Git et Python 3.11 ou 3.12. L'installation des dépendances nécessite Internet. L'application écoute ensuite uniquement sur la machine locale et la collecte de statistiques Streamlit est désactivée.
 
 ### Mac
 
@@ -92,7 +129,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m streamlit run app.py
 ```
 
-Remplacer `python3.12` par `python3.11` si nécessaire. Pour les prochains lancements, double-cliquer sur `Lancer-Evergreen.command`. Après un déplacement ou une copie vers une autre machine, recréer `.venv` si l'environnement Python ne fonctionne plus ; ce dossier n'est pas portable.
+Remplacer `python3.12` par `python3.11` si nécessaire. Utiliser ensuite `Lancer-Evergreen.command`. Ne pas copier l'environnement `.venv` sur une autre machine : le recréer avec ces commandes. Copier une sauvegarde séparément pour retrouver l'inventaire courant.
 
 ### Windows — PowerShell
 
@@ -105,36 +142,26 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-Avec Python 3.11, utiliser `py -3.11`. Ensuite, `Lancer-Evergreen.bat` permet de démarrer l'application par double-clic. Aucun script d'activation PowerShell n'est nécessaire.
+Utiliser `py -3.11` si nécessaire, puis `Lancer-Evergreen.bat` pour les lancements suivants.
 
-## Organisation du code
+## Code et vérifications
 
-- `app.py` : interface, saisie et affichage des résultats.
-- `core/data.py` : lecture et validation des trois CSV.
-- `core/graph.py` et `core/routing.py` : réseau et calcul des chemins.
-- `core/optimizer.py` : classement des destinations et préparation des regroupements.
-- `core/session.py` : activation d'un import complet.
-- `core/export.py` : export CSV, avec protection contre les formules de tableur dans les libellés.
-- `data/demo/` : exemples fictifs conservés dans Git.
-- `tests/` : tests métier et tests de l'interface.
-
-## Vérifier une modification
-
-Sur Mac, depuis le dossier du projet :
+- `app.py` : tableau de bord, planification, confirmation et arrivages.
+- `core/buildings.py` : objectifs par bâtiment et étapes des remplacements.
+- `core/store.py` : base locale, historique et transactions.
+- `core/data.py` : lecture et validation du référentiel et du stock initial.
+- `core/graph.py`, `core/routing.py`, `core/optimizer.py` : chemins et recherche de salles libres.
+- `room_views.py` : recherche ponctuelle de destinations, conservée dans « Salles et trajets ».
+- `data/demo/campus/` : nouvelle démonstration par bâtiment ; `data/demo/` conserve aussi le petit jeu utilisé par les premiers tests de routage.
+- `tests/` : tests métier, persistance et parcours de l'interface. Les bases de test sont temporaires.
 
 ```sh
 .venv/bin/python -m pip install -r requirements-dev.txt
 .venv/bin/python -m pytest -q
 ```
 
-Sur Windows, remplacer `.venv/bin/python` par `.\.venv\Scripts\python.exe`.
+Sous Windows, remplacer `.venv/bin/python` par `.\.venv\Scripts\python.exe`. Pour un environnement isolé, la variable `EVERGREEN_DB` permet de choisir une autre base.
 
-La configuration `ci/github-actions-tests.yml` prépare les tests Linux, macOS et Windows, avec Python 3.11 et 3.12. Elle est inactive pour le moment : sa publication sous `.github/workflows/tests.yml` demande une permission GitHub `workflow` absente lors de la mise en place. Les vérifications locales sont faites sur Mac ; cela ne vaut pas une vérification Windows. Les versions des dépendances sont bornées, mais pas complètement verrouillées.
-
-## Limites et données internes
-
-Le projet ne connaît pas les escaliers, ascenseurs, accès fermés, horaires, durées de transport ou contraintes de chariot. Le regroupement vise une seule cible ; il ne calcule pas un plan global pour tout le campus et n'applique pas une politique officielle de renouvellement Evergreen.
-
-Conserver les vrais fichiers hors du dépôt. `.gitignore` exclut les dossiers `private/`, `internal/`, `exports/`, les données hors démonstration, secrets et bases locales. Un fichier déjà suivi par Git reste suivi : vérifier les changements avant toute publication. Ne pas remplacer les exemples de `data/demo/` par un inventaire interne.
+La configuration CI `ci/github-actions-tests.yml` reste prête à activer avec la permission GitHub `workflow`. Les tests locaux sur Mac ne remplacent pas une vérification Windows. Le projet ne gère pas encore les numéros de série individuels, les chariots, les durées, l'accessibilité ou une optimisation globale de plusieurs bâtiments.
 
 Références : [NetworkX — Dijkstra](https://networkx.org/documentation/stable/reference/algorithms/shortest_paths/dijkstra.html), [Streamlit — import de fichiers](https://docs.streamlit.io/develop/api-reference/widgets/st.file_uploader).
