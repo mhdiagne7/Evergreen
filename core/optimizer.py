@@ -39,7 +39,7 @@ def evaluate_destinations(data, graph, source, model, quantity):
         route = shortest_route(graph, source, destination)
         free = data.available(destination)
         reasons = []
-        if model not in room.allowed_models:
+        if not room.accepts(model):
             reasons.append("Modèle non autorisé")
         if free < quantity:
             reasons.append(f"Place insuffisante : {free} libre(s) pour {quantity} demandé(s)")
@@ -75,7 +75,7 @@ class Plan:
 def prepare_grouping(data, graph, destination, model, quantity):
     """Remplit une cible depuis les sources proches ; aucun inventaire modifié."""
     validate_quantity(quantity)
-    if destination not in data.rooms or model not in data.rooms[destination].allowed_models:
+    if destination not in data.rooms or not data.rooms[destination].accepts(model):
         raise ValueError("Destination incompatible avec ce modèle")
     candidates = []
     for (source, item_model), stock in data.inventory.items():

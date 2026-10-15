@@ -13,6 +13,10 @@ class Room:
     building: str
     capacity: int
     allowed_models: frozenset[str]
+    room_type: str = "classroom"
+
+    def accepts(self, model):
+        return "*" in self.allowed_models or model in self.allowed_models
 
 
 @dataclass
@@ -45,6 +49,8 @@ def read_csv(content, filename):
     delimiter = ";" if ";" in header else ","
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     columns = SCHEMAS[filename]
+    if filename == "rooms.csv" and reader.fieldnames and "room_type" in reader.fieldnames:
+        columns = columns + ["room_type"]
     if reader.fieldnames is None or len(reader.fieldnames) != len(columns) or set(reader.fieldnames) != set(columns):
         raise ValueError(f"{filename} : colonnes attendues : {', '.join(columns)}.")
     rows = []
@@ -82,14 +88,17 @@ def load_csv_files(files):
         models = frozenset(m.strip() for m in row["allowed_models"].split("|"))
         if key in rooms or capacity < 0 or "" in models:
             raise ValueError("Salle dupliquée, capacité négative ou modèle vide")
-        rooms[key] = Room(row["building"], capacity, models)
+        room_type = row.get("room_type", "classroom")
+        if room_type not in {"classroom", "storage"}:
+            raise ValueError(f"{key} : room_type doit être classroom ou storage")
+        rooms[key] = Room(row["building"], capacity, models, room_type)
     inventory = {}
     for row in read_csv(files["inventory.csv"], "inventory.csv"):
         room, model = row["room_id"], row["model"]
         quantity = whole_number(row["quantity"], "inventory.csv", "quantity")
         if room not in rooms or quantity < 0 or (room, model) in inventory:
             raise ValueError("Inventaire invalide : salle, quantité ou doublon")
-        if model not in rooms[room].allowed_models:
+        if not rooms[room].accepts(model):
             raise ValueError("Modèle présent mais non autorisé dans la salle")
         inventory[room, model] = quantity
     connections, seen = [], set()
