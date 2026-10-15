@@ -44,11 +44,13 @@ def map_rows(data, models, selected_model=None):
         }
         installed = Counter()
         stock = 0
+        returned = 0
         for (room, model), quantity in data.inventory.items():
             if room in rooms:
                 installed[model] += quantity
             elif data.rooms[room].building == building:
                 stock += quantity
+                returned += data.returned_stock.get((room, model), 0)
         total = sum(installed.values())
         dominant = (
             min(installed, key=lambda model: (-installed[model], model))
@@ -80,6 +82,8 @@ def map_rows(data, models, selected_model=None):
                 "rooms": len(rooms),
                 "installed": total,
                 "stock": stock,
+                "new_stock": stock - returned,
+                "returned_stock": returned,
                 "quantity": quantity,
                 "details": details,
                 "dominant": dominant or "Aucun",
@@ -95,7 +99,7 @@ def campus_map(data, models):
     model = None if selected == "Tous les modèles" else selected
     rows, missing, colors = map_rows(data, models, model)
     if missing:
-        st.warning(
+        st.info(
             "Bâtiments sans coordonnées officielles dans le référentiel : "
             + ", ".join(missing)
         )
@@ -192,7 +196,7 @@ def campus_map(data, models):
             "html": (
                 "<b>{code} — {name}</b><br>"
                 "{rooms} salles · {installed} postes installés<br>"
-                "Stock : {stock}<hr>{details}"
+                "Stock neuf : {new_stock} · Retours : {returned_stock}<hr>{details}"
             ),
             "style": {
                 "backgroundColor": "#183c2f",

@@ -20,13 +20,17 @@ def stock_view(store, identifier, data, models, revision):
         return
     room = reserves[0] if len(reserves) == 1 else st.selectbox("Stock MRT", reserves)
     st.caption(
-        "Les nouveaux ordinateurs sont reçus à MRT. Aucun champ de provenance n’est demandé."
+        "Les nouveaux ordinateurs sont reçus uniquement à Morisset (MRT). "
+        "Les postes retirés y reviennent et restent comptés séparément."
     )
     table(
         [
             {
                 "Modèle": model,
-                "Quantité en stock à MRT": data.inventory.get((room, model), 0),
+                "Stock neuf à Morisset": data.inventory.get((room, model), 0)
+                - data.returned_stock.get((room, model), 0),
+                "Retours à Morisset": data.returned_stock.get((room, model), 0),
+                "Année de génération": data.model_years.get(model),
             }
             for model in models
         ]
@@ -40,6 +44,30 @@ def stock_view(store, identifier, data, models, revision):
             refresh("Modèle ajouté. Tu peux maintenant enregistrer sa quantité reçue.")
         except ValueError as error:
             st.error(str(error))
+    if models:
+        with st.expander("Années des modèles pour les réaffectations"):
+            st.caption(
+                "Renseigne les années de génération connues. Aucune ancienneté n’est déduite du nom du modèle."
+            )
+            dated_model = st.selectbox("Modèle à dater", models, key="model_to_date")
+            with st.form("model_year"):
+                year = st.number_input(
+                    "Année de génération",
+                    min_value=1980,
+                    max_value=2100,
+                    value=data.model_years.get(dated_model),
+                    step=1,
+                    key="model_year_" + dated_model,
+                )
+                save_year = st.form_submit_button("Enregistrer l’année du modèle")
+            if save_year:
+                try:
+                    store.set_model_year(identifier, dated_model, year, revision)
+                    refresh(
+                        "Année du modèle enregistrée pour les propositions de réaffectation."
+                    )
+                except ValueError as error:
+                    st.error(str(error))
     if models:
         with st.form("receipt"):
             model = st.selectbox("Modèle reçu", models, key="receipt_model")

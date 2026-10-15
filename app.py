@@ -39,8 +39,10 @@ def main():
         st.session_state.pop("preview", None)
         st.session_state.active_context = context
     st.caption(f"{label} · Version de l’inventaire : {revision}")
-    for note in data.import_notes:
-        st.warning("À vérifier dans l’export initial : " + note)
+    if data.import_notes:
+        with st.expander("Détails du contrôle de l’import"):
+            for note in data.import_notes:
+                st.caption(note)
     if data.distance_mode == "geodesic":
         st.caption(
             "Stock central à MRT · Distances à vol d’oiseau entre bâtiments, "

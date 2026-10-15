@@ -4,6 +4,7 @@ import streamlit as st
 
 from core.buildings import plan_building
 from core.export import csv_bytes
+from core.reuse import add_reuse_operations
 from ui.common import operation_rows, refresh, table, transfer_rows, transport_summary
 
 
@@ -53,11 +54,15 @@ def planning(store, identifier, data, models, revision):
         for model in chosen
     }
     buffer = st.selectbox("Stock central de retour à MRT", reserves, key="plan_buffer")
-    swaps = st.checkbox(
-        "Autoriser les échanges avec des classes d'autres bâtiments", key="plan_swaps"
+    reuse = st.checkbox(
+        "Réaffecter les retours plus récents à d’autres bâtiments",
+        value=True,
+        key="plan_reuse",
     )
     st.caption(
-        "Priorité au stock disponible, puis à la somme des distances des retraits, livraisons et retours. Les anciens postes reviennent à MRT. Un échange conserve un poste dans la salle source. Les distances à vol d’oiseau servent au classement, sans garantir une tournée optimale."
+        "Les nouveaux postes partent de Morisset et les anciens y reviennent. "
+        "Les retours peuvent ensuite améliorer une autre salle, uniquement si leur année de génération "
+        "est plus récente que celle du poste à remplacer. Renseigne ces années dans Stock et modèles."
     )
     signature = (
         identifier,
@@ -65,14 +70,14 @@ def planning(store, identifier, data, models, revision):
         building,
         tuple(sorted(goals.items())),
         buffer,
-        swaps,
+        reuse,
     )
     if st.button("Calculer les propositions", key="calculate"):
         try:
-            st.session_state.preview = (
-                signature,
-                plan_building(data, building, goals, buffer, swaps),
-            )
+            plan = plan_building(data, building, goals, buffer)
+            if reuse:
+                plan = add_reuse_operations(data, plan)
+            st.session_state.preview = (signature, plan)
         except ValueError as error:
             st.session_state.pop("preview", None)
             st.error(str(error))
@@ -81,8 +86,13 @@ def planning(store, identifier, data, models, revision):
         plan = preview[1]
         table(plan["summary"])
         if any(row["Manque"] for row in plan["summary"]):
-            st.warning(
-                "Objectif partiellement réalisable. Les propositions respectent le stock, les modèles autorisés, les chemins et la capacité de retour. Essaie un objectif plus petit, un arrivage ou les échanges entre classes. Un modèle ajouté au catalogue n'ajoute aucun ordinateur au stock."
+            st.info(
+                "Objectif partiellement réalisable avec le stock et les contraintes actuels. "
+                "Un modèle ajouté au catalogue n’ajoute aucun ordinateur au stock."
+            )
+        if plan.get("reuse_count"):
+            st.caption(
+                f"{plan['reuse_count']} réaffectation(s) de retours proposées dans d’autres bâtiments."
             )
         if not plan["groups"]:
             st.info(

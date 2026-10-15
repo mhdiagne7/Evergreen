@@ -27,6 +27,11 @@ def encode_data(data):
             "connections": data.connections,
             "distance_mode": data.distance_mode,
             "import_notes": list(data.import_notes),
+            "returned_stock": [
+                [room, model, quantity]
+                for (room, model), quantity in sorted(data.returned_stock.items())
+            ],
+            "model_years": data.model_years,
         },
         ensure_ascii=False,
     )
@@ -44,6 +49,11 @@ def decode_data(raw):
         [tuple(edge) for edge in content["connections"]],
         content.get("distance_mode", "network"),
         tuple(content.get("import_notes", [])),
+        {
+            (room, model): quantity
+            for room, model, quantity in content.get("returned_stock", [])
+        },
+        content.get("model_years", {}),
     )
 
 
@@ -159,6 +169,10 @@ class Store:
                 raise ValueError(
                     "Les arrivages doivent être enregistrés dans une réserve."
                 )
+            if data.distance_mode == "geodesic" and data.rooms[room].building != "MRT":
+                raise ValueError(
+                    "Les nouveaux stocks sont reçus uniquement à Morisset (MRT)."
+                )
             if model not in json.loads(row["models"]) or not data.rooms[room].accepts(
                 model
             ):
@@ -204,6 +218,25 @@ class Store:
                 {"room": room, "capacity": capacity},
             )
 
+    def set_model_year(self, identifier, model, year, revision):
+        if (
+            isinstance(year, bool)
+            or not isinstance(year, int)
+            or not 1980 <= year <= 2100
+        ):
+            raise ValueError("Renseigner une année de génération entre 1980 et 2100.")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row, data = self._read(db, identifier)
+            self._check_revision(row, revision)
+            if model not in json.loads(row["models"]):
+                raise ValueError("Modèle inconnu.")
+            data.model_years[model] = year
+            self._save(db, identifier, data)
+            self._event(
+                db, identifier, "Année du modèle", "", {"model": model, "year": year}
+            )
+
     def save_batch(self, identifier, revision, name, plan):
         if not plan["groups"] or not name.strip():
             raise ValueError("Le lot doit avoir un nom et au moins un déplacement.")
@@ -233,6 +266,24 @@ class Store:
             transfers = [Transfer(**move) for move in group["transfers"]]
             if not transfers:
                 raise ValueError("Une opération doit contenir un déplacement.")
+            for transfer in transfers:
+                if transfer.stock_kind != "returned":
+                    continue
+                installed = [
+                    model
+                    for (room, model), quantity in data.inventory.items()
+                    if room == transfer.destination and quantity > 0
+                ]
+                if (
+                    len(installed) != 1
+                    or installed[0] not in data.model_years
+                    or transfer.model not in data.model_years
+                    or data.model_years[transfer.model]
+                    <= data.model_years[installed[0]]
+                ):
+                    raise ValueError(
+                        "Un poste réaffecté doit être plus récent que le modèle installé, selon les années renseignées."
+                    )
             for transfer in transfers:
                 if shortest_route(graph, transfer.source, transfer.destination) is None:
                     raise ValueError("Un déplacement n'a pas de chemin renseigné.")

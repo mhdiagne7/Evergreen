@@ -25,7 +25,7 @@ def batches_view(store, identifier, data, revision):
             )
             if batch["status"] in {"Préparé", "Partiel"}:
                 if batch["revision"] != revision:
-                    st.warning(
+                    st.info(
                         "Ce lot a été préparé sur un inventaire plus ancien. Il faut le recalculer pour éviter d'utiliser un stock déjà déplacé."
                     )
                 else:

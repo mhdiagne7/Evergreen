@@ -12,11 +12,16 @@ class Transfer:
     destination: str
     model: str
     quantity: int = 1
+    stock_kind: str = "any"
 
 
 def apply_transfers(data, transfers):
     """Vérifie chaque étape, y compris la capacité du lieu de transit."""
-    updated = replace(data, inventory=data.inventory.copy())
+    updated = replace(
+        data,
+        inventory=data.inventory.copy(),
+        returned_stock=data.returned_stock.copy(),
+    )
     for move in transfers:
         if (
             isinstance(move.quantity, bool)
@@ -36,11 +41,36 @@ def apply_transfers(data, transfers):
             )
         if updated.inventory.get((move.source, move.model), 0) < move.quantity:
             raise ValueError(f"Stock insuffisant dans {move.source} pour {move.model}.")
+        if move.stock_kind not in {"any", "new", "returned"}:
+            raise ValueError("Catégorie de stock inconnue.")
+        source_key = move.source, move.model
+        source_room = updated.rooms[move.source]
+        destination_room = updated.rooms[move.destination]
+        returned = updated.returned_stock.get(source_key, 0)
+        available_new = updated.inventory.get(source_key, 0) - returned
+        if source_room.room_type == "storage":
+            if move.stock_kind == "new" and available_new < move.quantity:
+                raise ValueError("Le stock neuf disponible est insuffisant.")
+            if move.stock_kind == "returned" and returned < move.quantity:
+                raise ValueError("Le stock de retours disponible est insuffisant.")
+            used_returns = (
+                move.quantity
+                if move.stock_kind == "returned"
+                else max(0, move.quantity - available_new)
+            )
+            if used_returns:
+                updated.returned_stock[source_key] = returned - used_returns
+        else:
+            used_returns = move.quantity
         if updated.available(move.destination) < move.quantity:
             raise ValueError(f"Place insuffisante dans {move.destination}.")
         updated.inventory[move.source, move.model] -= move.quantity
         key = move.destination, move.model
         updated.inventory[key] = updated.inventory.get(key, 0) + move.quantity
+        if destination_room.room_type == "storage" and used_returns:
+            updated.returned_stock[key] = (
+                updated.returned_stock.get(key, 0) + used_returns
+            )
     return updated
 
 
@@ -106,7 +136,11 @@ def plan_building(data, building, goals, buffer, allow_swaps=False):
         isinstance(q, bool) or not isinstance(q, int) or q <= 0 for q in goals.values()
     ):
         raise ValueError("Indiquer au moins un objectif entier positif.")
-    if buffer not in data.rooms or data.rooms[buffer].room_type != "storage":
+    if (
+        buffer not in data.rooms
+        or data.rooms[buffer].room_type != "storage"
+        or (data.distance_mode == "geodesic" and data.rooms[buffer].building != "MRT")
+    ):
         raise ValueError(
             "Choisir un stock de retour existant, par exemple le stock central MRT."
         )
@@ -131,7 +165,9 @@ def plan_building(data, building, goals, buffer, allow_swaps=False):
             route_cache[a, b] = shortest_route(graph, a, b)
         return route_cache[a, b]
 
-    work = replace(data, inventory=data.inventory.copy())
+    work = replace(
+        data, inventory=data.inventory.copy(), returned_stock=data.returned_stock.copy()
+    )
     assigned = set()
     for model, count in sorted(goals.items()):
         matches = [r for r in classes if work.inventory.get((r, model), 0) == 1]
@@ -159,6 +195,25 @@ def plan_building(data, building, goals, buffer, allow_swaps=False):
                         continue
                     source_info = work.rooms[source]
                     is_swap = source_info.room_type == "classroom"
+                    stock_kind = "any"
+                    if not is_swap:
+                        if (
+                            data.distance_mode == "geodesic"
+                            and source_info.building != "MRT"
+                        ):
+                            continue
+                        returned = work.returned_stock.get((source, model), 0)
+                        if stock - returned > 0:
+                            stock_kind = "new"
+                        elif (
+                            old is not None
+                            and model in work.model_years
+                            and old in work.model_years
+                            and work.model_years[model] > work.model_years[old]
+                        ):
+                            stock_kind = "returned"
+                        else:
+                            continue
                     if is_swap and (
                         not allow_swaps
                         or source_info.building == building
@@ -172,7 +227,9 @@ def plan_building(data, building, goals, buffer, allow_swaps=False):
                     transfers = []
                     if old:
                         transfers.append(Transfer(destination, buffer, old))
-                    transfers.append(Transfer(source, destination, model))
+                    transfers.append(
+                        Transfer(source, destination, model, stock_kind=stock_kind)
+                    )
                     if is_swap:
                         transfers.append(Transfer(buffer, source, old))
                     if any(route(t.source, t.destination) is None for t in transfers):
@@ -211,6 +268,11 @@ def plan_building(data, building, goals, buffer, allow_swaps=False):
                     "source": source,
                     "delivery_m": route(source, destination).distance_m,
                     "distance_type": route(source, destination).distance_label,
+                    "stock_kind": next(
+                        move.stock_kind
+                        for move in transfers
+                        if move.destination == destination
+                    ),
                     "transfers": [vars(t) for t in transfers],
                 }
             )

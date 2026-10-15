@@ -119,13 +119,33 @@ Aucune provenance n'est demandée. Ajouter seulement un modèle ne crée aucune
 quantité. Les arrivages et les changements de capacité sont enregistrés avec
 historique et contrôle de version pour éviter l'utilisation d'un état périmé.
 
+Le tableau distingue **stock neuf** et **retours** à Morisset. Une arrivée
+augmente seulement le stock neuf ; un poste retiré d'une salle augmente les
+retours. Les deux catégories partagent la capacité physique configurée pour MRT.
+La base complète conserve ces catégories ; un export CSV de quantités seul ne
+conserve pas les catégories ni les années de génération.
+
+Dans **Années des modèles pour les réaffectations**, renseigner l'année de
+génération de chaque modèle concerné. L'application ne déduit pas l'âge du nom
+commercial. Sans année renseignée pour les deux modèles, elle ne propose pas
+automatiquement de réaffectation de retour.
+
 ## Préparer et réaliser Evergreen
 
 Choisir le bâtiment, les modèles et le nombre total de salles souhaité par
 modèle après les travaux. Les salles déjà conformes comptent. Les anciens postes
-reviennent au stock central de MRT. Les réserves sont utilisées en priorité ;
-les échanges avec des classes d'autres bâtiments sont facultatifs et conservent
-un poste dans la salle source.
+reviennent au stock central de Morisset (MRT). Aucun poste installé dans une
+autre classe n'est prélevé pour fournir le nouveau stock.
+
+L'option **Réaffecter les retours plus récents à d’autres bâtiments** complète
+le lot avec les retours disponibles à Morisset. Un retour ne remplace un poste
+que si son année de génération déclarée est strictement supérieure à celle du
+modèle installé. Le poste ainsi retiré revient lui aussi à Morisset et peut
+alimenter une autre réaffectation. Les objectifs du bâtiment initial sont
+préservés ; les réaffectations additionnelles concernent les autres bâtiments.
+Le modèle au plus petit écart d'année positif est proposé en premier pour
+permettre les cascades, puis la distance départage les possibilités. Chaque
+salle supplémentaire est traitée au plus une fois par lot.
 
 Chaque proposition vérifie le stock, les modèles autorisés, les capacités et
 l'existence d'une liaison. Le classement compare la **somme des distances de
@@ -135,7 +155,7 @@ traités par nom ; c'est une heuristique déterministe à bâtiment cible unique
 sans garantie d'optimum global ni de tournée piétonne minimale.
 
 L'ordre proposé est : retirer l'ancien poste vers MRT, livrer le nouveau poste,
-puis effectuer l'éventuel retour d'échange. Une limite de capacité configurée
+puis effectuer les éventuelles réaffectations dans l'ordre proposé. Une limite de capacité configurée
 doit donc permettre le transit avant la livraison. Si les contraintes empêchent
 de satisfaire l'objectif, le manque apparaît dans la synthèse.
 
@@ -145,6 +165,10 @@ réalisation et confirmer leur exécution physique. Chaque confirmation est une
 transaction : tout est appliqué ensemble ou rien. Une confirmation partielle est
 possible dans l'ordre de la feuille de route. Un lot périmé doit être recalculé.
 Une intervention déjà confirmée ne peut pas l'être à nouveau.
+Les retours sont disponibles après confirmation physique du retrait. Confirmer
+une réaffectation avant le retrait dont elle dépend est refusé sans modifier le
+stock. Les contrôles d'import restent consultables dans une section repliée ;
+aucun bandeau jaune n'est affiché.
 
 ## Données locales et sauvegarde
 

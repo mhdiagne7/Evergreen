@@ -91,3 +91,33 @@ def test_new_database_has_no_demo(tmp_path, monkeypatch):
     assert not app.exception
     assert Store(path).list_workspaces() == []
     assert any("Importe ton CSV" in item.value for item in app.info)
+
+
+def test_generation_year_can_be_saved_in_interface(application):
+    app, store, key = application
+    app.run()
+    app.selectbox(key="model_to_date").select("New").run()
+    app.number_input(key="model_year_New").set_value(2025)
+    next(
+        button
+        for button in app.button
+        if button.label == "Enregistrer l’année du modèle"
+    ).click().run()
+    assert not app.exception
+    assert store.load(key)[0].model_years["New"] == 2025
+
+
+def test_import_diagnostics_are_collapsed_without_yellow_banner(application):
+    app, store, key = application
+    data, _, _, _ = store.load(key)
+    data.import_notes = ("Contrôle conservé dans le détail",)
+    with store.connect() as db:
+        from core.store import encode_data
+
+        db.execute("UPDATE workspaces SET data=? WHERE id=?", (encode_data(data), key))
+    app.run()
+    assert not app.exception
+    assert not app.warning
+    assert any(
+        expander.label == "Détails du contrôle de l’import" for expander in app.expander
+    )

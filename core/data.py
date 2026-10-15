@@ -3,7 +3,7 @@
 import csv
 import io
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -26,6 +26,8 @@ class Dataset:
     connections: list[tuple[str, str, float, str]]
     distance_mode: str = "network"
     import_notes: tuple[str, ...] = ()
+    returned_stock: dict[tuple[str, str], int] = field(default_factory=dict)
+    model_years: dict[str, int] = field(default_factory=dict)
 
     def occupied(self, room):
         return sum(q for (r, _), q in self.inventory.items() if r == room)

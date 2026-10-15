@@ -29,6 +29,13 @@ def operation_rows(plan):
             "Modèle actuel": group["old_model"],
             "Modèle à installer": group["new_model"],
             "Source du poste": group["source"],
+            "Catégorie": (
+                "Retour réaffecté"
+                if group.get("stock_kind") == "returned"
+                else "Stock neuf Morisset"
+                if group.get("stock_kind") == "new"
+                else "Stock disponible"
+            ),
             "Livraison (m)": group["delivery_m"],
             "Distance": group["distance_type"],
             "État": "Fait" if group.get("completed") else "À faire",
