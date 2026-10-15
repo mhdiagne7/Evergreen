@@ -1,9 +1,8 @@
-import sqlite3
-from pathlib import Path
 import pytest
-from core.store import Store
-from core.buildings import plan_building
 from test_buildings import tiny
+
+from core.buildings import plan_building
+from core.store import Store
 
 
 def setup_store(tmp_path):
@@ -32,7 +31,9 @@ def test_partial_confirm_restart_double_confirmation_and_static_data(tmp_path):
     with pytest.raises(ValueError):
         reopened.confirm_batch(key, batch, [1], "Doublon")
     assert len(reopened.history(key)) == 2
-    assert sum(reopened.load(key)[0].inventory.values()) == sum(tiny().inventory.values())
+    assert sum(reopened.load(key)[0].inventory.values()) == sum(
+        tiny().inventory.values()
+    )
 
 
 def test_old_drafts_are_blocked_and_atomic(tmp_path):
@@ -64,6 +65,7 @@ def test_failure_rolls_back_entire_confirmation(tmp_path):
     batch = store.save_batch(key, 0, "A", plan)
     # Simule un lot stocké incohérent : la première salle doit aussi être annulée.
     import json
+
     with store.connect() as db:
         plan["groups"][1]["transfers"][1]["quantity"] = 999
         db.execute("UPDATE batches SET plan=? WHERE id=?", (json.dumps(plan), batch))

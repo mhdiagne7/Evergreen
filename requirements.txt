@@ -1,2 +1,3 @@
 streamlit>=1.50,<2
 networkx>=3.4,<4
+pydeck>=0.9,<1

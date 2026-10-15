@@ -1,14 +1,16 @@
 import pytest
-from core.data import DEMO_DIR, SCHEMAS, load_csv_files
-from core.graph import build_graph
-from core.routing import shortest_route
-from core.optimizer import evaluate_destinations
-from core.session import activate_import
+from sample_data import ROUTING_FILES
+
+from core.data import load_csv_files
 from core.export import csv_bytes
+from core.graph import build_graph
+from core.optimizer import evaluate_destinations
+from core.routing import shortest_route
+from core.session import activate_import
 
 
 def demo_files():
-    return {name: (DEMO_DIR / name).read_bytes() for name in SCHEMAS}
+    return dict(ROUTING_FILES)
 
 
 def test_new_buildings_models_and_nearest_by_weight():
@@ -34,13 +36,25 @@ def test_import_is_atomic_and_resets_choices():
     invalid["inventory.csv"] = b"room_id,model,quantity\nMissing,PC,5\n"
     with pytest.raises(ValueError):
         activate_import(state, invalid)
-    assert state == {"dataset": "previous", "dataset_label": "previous", "choice_source": "old"}
+    assert state == {
+        "dataset": "previous",
+        "dataset_label": "previous",
+        "choice_source": "old",
+    }
     activate_import(state, demo_files())
     assert "choice_source" not in state
     assert state["dataset_label"].startswith("Données importées")
 
 
-@pytest.mark.parametrize("content", [b"\xff", b"", b"room_id,building,capacity,allowed_models\nA,B,no,PC\n", b"room_id,building,capacity,allowed_models\nA,B,2,PC,extra\n"])
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"\xff",
+        b"",
+        b"room_id,building,capacity,allowed_models\nA,B,no,PC\n",
+        b"room_id,building,capacity,allowed_models\nA,B,2,PC,extra\n",
+    ],
+)
 def test_invalid_upload(content):
     files = demo_files()
     files["rooms.csv"] = content
@@ -52,11 +66,19 @@ def test_ties_are_alphabetical():
     data = load_csv_files(demo_files())
     graph = build_graph(data)
     graph.add_edge("MRT 1140", "STE 1030", distance_m=50, distance_type="simulated")
-    results = [item.room for item in evaluate_destinations(data, graph, "MRT 1140", "Dell OptiPlex 7050", 5) if not item.reasons]
+    results = [
+        item.room
+        for item in evaluate_destinations(
+            data, graph, "MRT 1140", "Dell OptiPlex 7050", 5
+        )
+        if not item.reasons
+    ]
     assert results[:2] == ["MRT 120", "STE 1030"]
 
 
 def test_export_protects_formula_and_preserves_label():
-    exported = csv_bytes([{"Salle": "=HYPERLINK(1)", "Quantité": 2, "Jeu": "Import"}]).decode("utf-8-sig")
+    exported = csv_bytes(
+        [{"Salle": "=HYPERLINK(1)", "Quantité": 2, "Jeu": "Import"}]
+    ).decode("utf-8-sig")
     assert "'=HYPERLINK(1)" in exported
     assert "Import" in exported

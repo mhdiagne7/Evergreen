@@ -1,5 +1,7 @@
 """Recherche de destinations et proposition gloutonne de regroupement."""
+
 from dataclasses import dataclass
+
 from core.routing import Route, shortest_route
 
 
@@ -42,19 +44,27 @@ def evaluate_destinations(data, graph, source, model, quantity):
         if not room.accepts(model):
             reasons.append("Modèle non autorisé")
         if free < quantity:
-            reasons.append(f"Place insuffisante : {free} libre(s) pour {quantity} demandé(s)")
+            reasons.append(
+                f"Place insuffisante : {free} libre(s) pour {quantity} demandé(s)"
+            )
         if route is None:
             reasons.append("Aucun chemin renseigné")
         results.append(Destination(destination, free, route, tuple(reasons)))
-    return sorted(results, key=lambda item: (
-        item.route.distance_m if item.route else float("inf"), item.room
-    ))
+    return sorted(
+        results,
+        key=lambda item: (
+            item.route.ranking_distance if item.route else float("inf"),
+            item.room,
+        ),
+    )
 
 
 def compatible_destinations(data, graph, source, model, quantity):
-    return [Move(source, item.room, model, quantity, item.route)
-            for item in evaluate_destinations(data, graph, source, model, quantity)
-            if not item.reasons]
+    return [
+        Move(source, item.room, model, quantity, item.route)
+        for item in evaluate_destinations(data, graph, source, model, quantity)
+        if not item.reasons
+    ]
 
 
 @dataclass(frozen=True)
@@ -69,6 +79,8 @@ class Plan:
 
     @property
     def effort(self):
+        if any(move.route.distance_m is None for move in self.moves):
+            return None
         return sum(move.quantity * move.route.distance_m for move in self.moves)
 
 
@@ -83,7 +95,7 @@ def prepare_grouping(data, graph, destination, model, quantity):
             continue
         route = shortest_route(graph, source, destination)
         if route is not None:
-            candidates.append((route.distance_m, source, stock, route))
+            candidates.append((route.ranking_distance, source, stock, route))
     budget = min(quantity, data.available(destination))
     moves = []
     for _, source, stock, route in sorted(candidates):

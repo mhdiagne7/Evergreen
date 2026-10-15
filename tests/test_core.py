@@ -1,15 +1,17 @@
 import copy
-import shutil
+
 import pytest
-from core.data import DEMO_DIR, load_data
+from sample_data import ROUTING_FILES, routing_data
+
+from core.data import load_data
 from core.graph import build_graph
-from core.routing import shortest_route
 from core.optimizer import compatible_destinations, prepare_grouping
+from core.routing import shortest_route
 
 
 @pytest.fixture
 def data():
-    return load_data()
+    return routing_data()
 
 
 def test_route_and_same_room(data):
@@ -40,26 +42,39 @@ def test_unreachable_unknown_and_estimated(data):
 
 
 def test_compatibility_capacity_and_order(data):
-    moves = compatible_destinations(data, build_graph(data), "MRT 1140", "Dell OptiPlex 7050", 10)
+    moves = compatible_destinations(
+        data, build_graph(data), "MRT 1140", "Dell OptiPlex 7050", 10
+    )
     assert [move.destination for move in moves] == ["MRT 120", "UCU 214", "STE 1030"]
     # MRT 1140 has 10 of this model plus 2 of another: only 8 free places.
-    moves = compatible_destinations(data, build_graph(data), "MRT 120", "Dell OptiPlex 7050", 9)
+    moves = compatible_destinations(
+        data, build_graph(data), "MRT 120", "Dell OptiPlex 7050", 9
+    )
     assert "MRT 1140" not in [move.destination for move in moves]
     with pytest.raises(ValueError):
-        compatible_destinations(data, build_graph(data), "MRT 1140", "Dell OptiPlex 7050", 11)
+        compatible_destinations(
+            data, build_graph(data), "MRT 1140", "Dell OptiPlex 7050", 11
+        )
 
 
 @pytest.mark.parametrize("quantity", [0, -1, 1.5, True])
 def test_invalid_quantity(data, quantity):
     with pytest.raises(ValueError):
-        prepare_grouping(data, build_graph(data), "MRT 120", "Dell OptiPlex 7050", quantity)
+        prepare_grouping(
+            data, build_graph(data), "MRT 120", "Dell OptiPlex 7050", quantity
+        )
 
 
 def test_grouping_respects_capacity_conservation_and_no_mutation(data):
     before = copy.deepcopy(data)
-    plan = prepare_grouping(data, build_graph(data), "UCU 214", "Dell OptiPlex 7050", 25)
+    plan = prepare_grouping(
+        data, build_graph(data), "UCU 214", "Dell OptiPlex 7050", 25
+    )
     assert plan.moved == 18 and plan.remaining == 7
-    assert [(m.source, m.quantity) for m in plan.moves] == [("MRT 1140", 10), ("MRT 120", 8)]
+    assert [(m.source, m.quantity) for m in plan.moves] == [
+        ("MRT 1140", 10),
+        ("MRT 120", 8),
+    ]
     assert plan.effort == 10 * 195 + 8 * 205
     updated = dict(data.inventory)
     for move in plan.moves:
@@ -81,18 +96,21 @@ def test_insufficient_stock_and_disconnected(data):
         prepare_grouping(data, graph, "CBY 210", "Dell OptiPlex 7050", 5)
 
 
-@pytest.mark.parametrize("filename,old,new", [
-    ("connections.csv", "20,simulated", "-20,simulated"),
-    ("connections.csv", "20,simulated", "nan,simulated"),
-    ("connections.csv", "20,simulated", "20,real"),
-    ("inventory.csv", "7050,10", "7050,100"),
-    ("inventory.csv", "7050,10", "7050,-1"),
-    ("inventory.csv", "MRT 1140", "UNKNOWN"),
-    ("rooms.csv", "room_id", "wrong_header"),
-])
+@pytest.mark.parametrize(
+    "filename,old,new",
+    [
+        ("connections.csv", "20,simulated", "-20,simulated"),
+        ("connections.csv", "20,simulated", "nan,simulated"),
+        ("connections.csv", "20,simulated", "20,real"),
+        ("inventory.csv", "7050,10", "7050,100"),
+        ("inventory.csv", "7050,10", "7050,-1"),
+        ("inventory.csv", "MRT 1140", "UNKNOWN"),
+        ("rooms.csv", "room_id", "wrong_header"),
+    ],
+)
 def test_invalid_csv(tmp_path, filename, old, new):
-    for path in DEMO_DIR.glob("*.csv"):
-        shutil.copy(path, tmp_path / path.name)
+    for name, content in ROUTING_FILES.items():
+        (tmp_path / name).write_bytes(content)
     path = tmp_path / filename
     path.write_text(path.read_text().replace(old, new), encoding="utf-8")
     with pytest.raises(ValueError):

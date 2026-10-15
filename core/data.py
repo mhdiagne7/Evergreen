@@ -1,19 +1,19 @@
 """Lecture des salles, du stock et des liaisons, depuis un dossier ou un import."""
+
 import csv
-import math
 import io
+import math
 from dataclasses import dataclass
 from pathlib import Path
-
-DEMO_DIR = Path(__file__).resolve().parents[1] / "data" / "demo"
 
 
 @dataclass(frozen=True)
 class Room:
     building: str
-    capacity: int
+    capacity: int | None
     allowed_models: frozenset[str]
     room_type: str = "classroom"
+    capacity_basis: str = "declared"
 
     def accepts(self, model):
         return "*" in self.allowed_models or model in self.allowed_models
@@ -24,12 +24,17 @@ class Dataset:
     rooms: dict[str, Room]
     inventory: dict[tuple[str, str], int]
     connections: list[tuple[str, str, float, str]]
+    distance_mode: str = "network"
+    import_notes: tuple[str, ...] = ()
 
     def occupied(self, room):
         return sum(q for (r, _), q in self.inventory.items() if r == room)
 
     def available(self, room):
-        return self.rooms[room].capacity - self.occupied(room)
+        capacity = self.rooms[room].capacity
+        if capacity is None:
+            return math.inf
+        return capacity - self.occupied(room)
 
 
 SCHEMAS = {
@@ -44,19 +49,33 @@ def read_csv(content, filename):
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as error:
-        raise ValueError(f"{filename} : enregistrer le fichier en CSV UTF-8.") from error
+        raise ValueError(
+            f"{filename} : enregistrer le fichier en CSV UTF-8."
+        ) from error
     header = text.splitlines()[0] if text.splitlines() else ""
     delimiter = ";" if ";" in header else ","
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     columns = SCHEMAS[filename]
-    if filename == "rooms.csv" and reader.fieldnames and "room_type" in reader.fieldnames:
+    if (
+        filename == "rooms.csv"
+        and reader.fieldnames
+        and "room_type" in reader.fieldnames
+    ):
         columns = columns + ["room_type"]
-    if reader.fieldnames is None or len(reader.fieldnames) != len(columns) or set(reader.fieldnames) != set(columns):
+    if (
+        reader.fieldnames is None
+        or len(reader.fieldnames) != len(columns)
+        or set(reader.fieldnames) != set(columns)
+    ):
         raise ValueError(f"{filename} : colonnes attendues : {', '.join(columns)}.")
     rows = []
     for row in reader:
-        if None in row or any(value is None or not value.strip() for value in row.values()):
-            raise ValueError(f"{filename}, ligne {reader.line_num} : cellule vide ou colonne en trop.")
+        if None in row or any(
+            value is None or not value.strip() for value in row.values()
+        ):
+            raise ValueError(
+                f"{filename}, ligne {reader.line_num} : cellule vide ou colonne en trop."
+            )
         rows.append({key: value.strip() for key, value in row.items()})
     if not rows and filename == "rooms.csv":
         raise ValueError("rooms.csv : ajouter au moins une salle.")
@@ -67,11 +86,13 @@ def whole_number(value, filename, field):
     try:
         number = int(value)
     except ValueError as error:
-        raise ValueError(f"{filename} : {field} doit être un entier (valeur reçue : {value}).") from error
+        raise ValueError(
+            f"{filename} : {field} doit être un entier (valeur reçue : {value})."
+        ) from error
     return number
 
 
-def load_data(directory=DEMO_DIR):
+def load_data(directory):
     directory = Path(directory)
     return load_csv_files({name: (directory / name).read_bytes() for name in SCHEMAS})
 
@@ -107,12 +128,21 @@ def load_csv_files(files):
         try:
             distance = float(row["distance_m"].replace(",", "."))
         except ValueError as error:
-            raise ValueError("connections.csv : distance_m doit être un nombre en mètres.") from error
+            raise ValueError(
+                "connections.csv : distance_m doit être un nombre en mètres."
+            ) from error
         key = frozenset((source, target))
-        if source == target or key in seen or not math.isfinite(distance) or distance <= 0:
+        if (
+            source == target
+            or key in seen
+            or not math.isfinite(distance)
+            or distance <= 0
+        ):
             raise ValueError("Connexion dupliquée, boucle ou distance invalide")
         if row["distance_type"] not in {"simulated", "estimated", "measured"}:
-            raise ValueError("connections.csv : distance_type doit être simulated, estimated ou measured")
+            raise ValueError(
+                "connections.csv : distance_type doit être simulated, estimated ou measured"
+            )
         seen.add(key)
         connections.append((source, target, distance, row["distance_type"]))
     dataset = Dataset(rooms, inventory, connections)

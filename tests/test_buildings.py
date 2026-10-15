@@ -1,20 +1,31 @@
 from copy import deepcopy
+
 import pytest
-from core.data import Dataset, Room, load_data, DEMO_DIR
-from core.buildings import Transfer, apply_transfers, plan_building, building_summary
 
-
-def campus():
-    return load_data(DEMO_DIR / "campus")
+from core.buildings import Transfer, apply_transfers, building_summary, plan_building
+from core.data import Dataset, Room
 
 
 def tiny(storage_qty=2, buffer_capacity=5):
-    rooms = {"A1": Room("A", 1, frozenset({"*"})), "A2": Room("A", 1, frozenset({"*"})),
-             "A stock": Room("A", buffer_capacity, frozenset({"*"}), "storage"),
-             "B1": Room("B", 1, frozenset({"*"})), "B stock": Room("B", 10, frozenset({"*"}), "storage")}
-    stock = {("A1", "Old"): 1, ("A2", "Old"): 1, ("B1", "New"): 1, ("B stock", "New"): storage_qty}
-    edges = [("A1", "A stock", 1, "simulated"), ("A2", "A stock", 2, "simulated"),
-             ("B1", "A stock", 4, "simulated"), ("B stock", "A stock", 10, "simulated")]
+    rooms = {
+        "A1": Room("A", 1, frozenset({"*"})),
+        "A2": Room("A", 1, frozenset({"*"})),
+        "A stock": Room("A", buffer_capacity, frozenset({"*"}), "storage"),
+        "B1": Room("B", 1, frozenset({"*"})),
+        "B stock": Room("B", 10, frozenset({"*"}), "storage"),
+    }
+    stock = {
+        ("A1", "Old"): 1,
+        ("A2", "Old"): 1,
+        ("B1", "New"): 1,
+        ("B stock", "New"): storage_qty,
+    }
+    edges = [
+        ("A1", "A stock", 1, "simulated"),
+        ("A2", "A stock", 2, "simulated"),
+        ("B1", "A stock", 4, "simulated"),
+        ("B stock", "A stock", 10, "simulated"),
+    ]
     return Dataset(rooms, stock, edges)
 
 
@@ -25,16 +36,29 @@ def execute(data, plan):
 
 
 def test_building_goals_and_conservation():
-    data = campus()
+    data = tiny()
     original = deepcopy(data)
-    goals = {"Dell OptiPlex 7060": 15, "Dell OptiPlex 7090": 10}
-    plan = plan_building(data, "CBY", goals, "CBY Réserve")
+    goals = {"New": 2}
+    plan = plan_building(data, "A", goals, "A stock")
     assert all(row["Manque"] == 0 for row in plan["summary"])
     after = execute(data, plan)
     for model, count in goals.items():
-        assert sum(q for (r, m), q in after.inventory.items() if m == model and after.rooms[r].building == "CBY" and after.rooms[r].room_type == "classroom") == count
+        assert (
+            sum(
+                q
+                for (r, m), q in after.inventory.items()
+                if m == model
+                and after.rooms[r].building == "A"
+                and after.rooms[r].room_type == "classroom"
+            )
+            == count
+        )
     assert sum(after.inventory.values()) == sum(data.inventory.values())
-    assert all(after.occupied(r) == 1 for r, room in after.rooms.items() if room.room_type == "classroom")
+    assert all(
+        after.occupied(r) == 1
+        for r, room in after.rooms.items()
+        if room.room_type == "classroom"
+    )
     assert data == original
 
 
@@ -89,7 +113,12 @@ def test_dashboard_separates_installed_from_stock():
     summary, details = building_summary(tiny(), ["Old", "New"])
     assert summary[0]["Postes installés"] == 2
     assert summary[1]["En réserve"] == 2
-    assert next(r for r in details if r["Bâtiment"] == "B" and r["Modèle"] == "New")["Total"] == 3
+    assert (
+        next(r for r in details if r["Bâtiment"] == "B" and r["Modèle"] == "New")[
+            "Total"
+        ]
+        == 3
+    )
 
 
 def test_transfer_rejects_negative_stock_and_over_capacity():

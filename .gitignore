@@ -9,9 +9,9 @@ htmlcov/
 .env.*
 !.env.example
 .streamlit/secrets.toml
-# Seules les données de démonstration sont publiables.
+# Seule la géographie publique du campus est publiable.
 data/*
-!data/demo/
+!data/public/
 private/
 internal/
 exports/
@@ -19,3 +19,8 @@ exports/
 *.xls
 *.sqlite*
 *.db
+.ruff_cache/
+
+# Les inventaires et exports CSV restent locaux, quel que soit leur dossier.
+*.csv
+*.tsv

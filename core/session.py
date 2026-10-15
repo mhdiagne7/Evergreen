@@ -1,4 +1,5 @@
 """Changement de jeu de données : tout valider avant de remplacer la session."""
+
 from core.data import load_csv_files
 
 

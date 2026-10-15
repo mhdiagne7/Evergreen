@@ -1,6 +1,11 @@
 from pathlib import Path
+
 import pytest
 from streamlit.testing.v1 import AppTest
+from test_owned import OWNED
+
+from core.campus import CENTRAL_STOCK
+from core.owned_import import import_owned_computers
 from core.store import Store
 
 APP = Path(__file__).resolve().parents[1] / "app.py"
@@ -10,54 +15,79 @@ APP = Path(__file__).resolve().parents[1] / "app.py"
 def application(tmp_path, monkeypatch):
     path = tmp_path / "test.sqlite3"
     monkeypatch.setenv("EVERGREEN_DB", str(path))
-    return AppTest.from_file(str(APP)), Store(path)
+    monkeypatch.delenv("EVERGREEN_INVENTORY", raising=False)
+    store = Store(path)
+    key = store.create_workspace("Test campus", import_owned_computers(OWNED))
+    store.add_model(key, "New")
+    store.receive(key, CENTRAL_STOCK, "New", 2, 0)
+    return AppTest.from_file(str(APP)), store, key
 
 
 def test_dashboard_and_import_validation(application):
-    app, store = application
+    app, store, key = application
     app.run()
     assert not app.exception
     assert app.title[0].value == "Evergreen · Bâtiments et inventaire"
-    assert len(store.load("demo")[0].rooms) == 53
+    assert app.metric[2].value == "6"
+    assert not any(workspace["id"] == "demo" for workspace in store.list_workspaces())
     app.button(key="import_apply").click().run()
-    assert any("Fichiers manquants" in e.value for e in app.error)
+    assert any("Sélectionne un fichier" in error.value for error in app.error)
     assert not app.exception
 
 
 def test_plan_save_confirm_and_restart(application):
-    app, store = application
+    app, store, key = application
     app.run()
-    app.multiselect(key="plan_models").set_value(["Dell OptiPlex 7060", "Dell OptiPlex 7090"]).run()
-    app.number_input(key="goal_CBY_Dell OptiPlex 7060").set_value(15).run()
+    app.selectbox(key="plan_building").select("CBY").run()
+    app.multiselect(key="plan_models").set_value(["New"]).run()
+    app.number_input(key="goal_CBY_New").set_value(2).run()
     app.button(key="calculate").click().run()
     assert not app.exception
     app.button(key="save_batch").click().run()
     assert not app.exception
-    batch = store.batches("demo")[0]
-    assert store.load("demo")[2] == 0
+    batch = store.batches(key)[0]
     app.multiselect(key="complete_" + batch["id"]).set_value([0])
     app.text_input(key="note_" + batch["id"]).set_value("Test de réalisation")
-    # Le bouton seul ne doit pas valider le déplacement physique.
-    submit = next(b for b in app.button if b.label == "Mettre à jour l'inventaire")
-    submit.click().run()
-    assert store.load("demo")[2] == 0
+    next(
+        button for button in app.button if button.label == "Mettre à jour l'inventaire"
+    ).click().run()
+    assert store.load(key)[2] == 1
     app.multiselect(key="complete_" + batch["id"]).set_value([0])
     app.text_input(key="note_" + batch["id"]).set_value("Test de réalisation")
     app.checkbox(key="done_" + batch["id"]).check()
-    next(b for b in app.button if b.label == "Mettre à jour l'inventaire").click().run()
+    next(
+        button for button in app.button if button.label == "Mettre à jour l'inventaire"
+    ).click().run()
     assert not app.exception
-    assert store.load("demo")[2] == 1
-    new_app = AppTest.from_file(str(APP)).run()
-    assert not new_app.exception
-    assert store.batches("demo")[0]["status"] == "Partiel"
+    assert store.load(key)[2] == 2
+    reopened = AppTest.from_file(str(APP)).run()
+    assert not reopened.exception
+    assert store.batches(key)[0]["status"] == "Partiel"
 
 
-def test_empty_workspace_and_old_format(application):
-    from core.data import Dataset, Room
-    app, store = application
+def test_receipt_needs_no_origin_and_persists(application):
+    app, store, key = application
     app.run()
-    key = store.create_workspace("Une salle", Dataset({"Only": Room("New", 1, frozenset({"*"}))}, {}, []))
-    app.run()
-    app.selectbox(key="workspace").select(key).run()
+    app.selectbox(key="receipt_model").select("New")
+    app.number_input(key="receipt_quantity").set_value(3)
+    next(
+        button for button in app.button if button.label == "Enregistrer l'arrivage"
+    ).click().run()
+    assert store.load(key)[0].inventory[CENTRAL_STOCK, "New"] == 2
+    app.checkbox(key="receipt_confirm").check()
+    next(
+        button for button in app.button if button.label == "Enregistrer l'arrivage"
+    ).click().run()
     assert not app.exception
-    assert any("au moins un modèle" in i.value for i in app.info)
+    assert store.load(key)[0].inventory[CENTRAL_STOCK, "New"] == 5
+    assert not any("Provenance" in widget.label for widget in app.text_input)
+
+
+def test_new_database_has_no_demo(tmp_path, monkeypatch):
+    path = tmp_path / "empty.sqlite3"
+    monkeypatch.setenv("EVERGREEN_DB", str(path))
+    monkeypatch.delenv("EVERGREEN_INVENTORY", raising=False)
+    app = AppTest.from_file(str(APP)).run()
+    assert not app.exception
+    assert Store(path).list_workspaces() == []
+    assert any("Importe ton CSV" in item.value for item in app.info)

@@ -1,4 +1,5 @@
 """Export des propositions, avec protection des cellules pour les tableurs."""
+
 import csv
 import io
 
