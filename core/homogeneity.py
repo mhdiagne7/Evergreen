@@ -140,7 +140,17 @@ def plan_homogeneity(data, targets, stock, protect_newer=True):
             )
             if not old_models and work.occupied(room) >= info.capacity:
                 continue
-            old = old_models[0] if old_models else None
+
+            def recovery_priority(old):
+                demand = sum(
+                    max(0, rooms[other].capacity - work.inventory.get((other, old), 0))
+                    for other in rooms
+                    if desired[other] == old
+                )
+                available = work.inventory.get((stock, old), 0)
+                return (-max(0, demand - available), old)
+
+            old = min(old_models, key=recovery_priority) if old_models else None
             transfers = ([Transfer(room, stock, old)] if old else []) + [
                 Transfer(stock, room, model, stock_kind="regrouped")
             ]
@@ -179,7 +189,21 @@ def plan_homogeneity(data, targets, stock, protect_newer=True):
         found = False
         while True:
             try:
-                edges = nx.find_cycle(dependencies)
+                reciprocal = [
+                    (
+                        route(first, second).ranking_distance
+                        + route(second, first).ranking_distance,
+                        first,
+                        second,
+                    )
+                    for first, second in dependencies.edges
+                    if first < second and dependencies.has_edge(second, first)
+                ]
+                if reciprocal:
+                    _, first, second = min(reciprocal)
+                    edges = [(first, second), (second, first)]
+                else:
+                    edges = nx.find_cycle(dependencies)
             except nx.NetworkXNoCycle:
                 break
             cycle = [source for source, _ in edges]

@@ -121,13 +121,13 @@ def test_stock_limit_and_stale_plan(tmp_path):
         store.receive(key, CENTRAL_STOCK, "Old", 1, 0)
 
 
-def test_map_only_contains_inventory_buildings_and_escapes_html():
+def test_map_contains_plain_text_model_rows():
     data = import_owned_computers(OWNED.replace(b"Other", b"<script>"))
     rows, missing, _ = map_rows(data, ["Old", "<script>"])
     assert missing == []
     assert {row["code"] for row in rows} == {"CBY", "MRT", "FTX", "LEE"}
     assert sum(row["installed"] for row in rows) == 6
-    assert "<script>" not in next(
+    assert "<script> : 1 poste (50 %)" in next(
         row["details"] for row in rows if row["code"] == "FTX"
     )
     filtered, _, _ = map_rows(data, ["Old", "<script>"], "<script>")

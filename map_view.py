@@ -65,14 +65,8 @@ def map_rows(data, models, selected_model=None):
             color = colors.get(dominant, [173, 183, 180, 130])
         properties = feature["properties"]
         details = (
-            "<br>".join(
-                (
-                    '<div style="margin-top:9px">'
-                    f'<div style="display:flex;justify-content:space-between;gap:14px">'
-                    f"<span>{escape(model)}</span><b>{count} · {100 * count / total:.0f}%</b></div>"
-                    '<div style="height:4px;background:#ffffff30;margin-top:4px;border-radius:3px">'
-                    f'<div style="height:4px;width:{100 * count / total:.1f}%;background:rgb({",".join(map(str, colors[model][:3]))});border-radius:3px"></div></div></div>'
-                )
+            "\n".join(
+                f"{model} : {count} poste{'s' if count > 1 else ''} ({100 * count / total:.0f} %)"
                 for model, count in sorted(
                     installed.items(), key=lambda item: (-item[1], item[0])
                 )
@@ -83,7 +77,7 @@ def map_rows(data, models, selected_model=None):
         rows.append(
             {
                 "code": building,
-                "name": escape(properties["name"]),
+                "name": properties["name"],
                 "polygon": feature["geometry"]["coordinates"][0],
                 "position": [properties["longitude"], properties["latitude"]],
                 "color": color,
@@ -105,7 +99,7 @@ def map_rows(data, models, selected_model=None):
                 else 0,
                 "model_types": sum(count > 0 for count in installed.values()),
                 "dominance_label": (
-                    escape(dominant)
+                    dominant
                     if dominant
                     and sum(
                         count == installed[dominant] for count in installed.values()
@@ -223,20 +217,19 @@ def campus_map(data, models):
         initial_view_state=view,
         map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
         tooltip={
-            "html": (
-                '<div style="max-width:280px;white-space:normal">'
-                '<b style="font-size:15px">{code}</b> · {name}<br>'
-                "{rooms} salles · {installed} postes · {model_types} modèles<br>"
-                '<div style="margin-top:8px"><b>Principal : {dominance_label}</b> · {dominant_share}%</div>'
-                "{details}<hr>{stock_summary}</div>"
+            "text": (
+                "{code} · {name}\n"
+                "{rooms} salles · {installed} postes · {model_types} modèles\n\n"
+                "MODÈLE PRINCIPAL\n{dominance_label} · {dominant_share} %\n\n"
+                "RÉPARTITION DES POSTES\n{details}\n\n{stock_summary}"
             ),
             "style": {
                 "backgroundColor": "#183c2f",
                 "color": "white",
                 "fontSize": "13px",
-                "maxWidth": "300px",
-                "overflowWrap": "anywhere",
-                "borderRadius": "10px",
+                "maxWidth": "360px",
+                "whiteSpace": "pre-wrap",
+                "lineHeight": "1.6",
                 "padding": "14px",
             },
         },

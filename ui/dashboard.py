@@ -25,7 +25,12 @@ def overview(data, models):
     selected = campus_map(data, models)
     summary, breakdown = building_summary(data, models)
     st.subheader("Vue d'ensemble des bâtiments")
-    table(summary)
+    table(
+        [
+            {key: value for key, value in row.items() if key != "En réserve"}
+            for row in summary
+        ]
+    )
     with st.expander("Répartition par modèle"):
         table([row for row in breakdown if row["Total"]])
     st.download_button(

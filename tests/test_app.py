@@ -135,7 +135,6 @@ def test_default_homogeneity_can_save_a_campus_cycle(tmp_path, monkeypatch):
     app = AppTest.from_file(str(APP)).run()
     assert not app.exception
     assert app.radio(key="planning_mode").value == "Regrouper par modèle dominant"
-    assert app.button(key="google_compute").disabled
     app.button(key="uniform_calculate").click().run()
     assert not app.exception
     app.button(key="uniform_save").click().run()
@@ -147,9 +146,9 @@ def test_default_homogeneity_can_save_a_campus_cycle(tmp_path, monkeypatch):
     assert store.load(identifier)[0].inventory["CBY-103", "X"] == 1
 
 
-def test_google_connection_does_not_run_without_a_key(application):
+def test_google_routes_are_links_without_api_fields(application):
     app, _, _ = application
     app.run()
     assert not app.exception
-    assert app.button(key="google_compute").disabled
-    assert any("Aucune distance Google Maps" in item.value for item in app.info)
+    assert not any("API" in item.label for item in app.text_input)
+    assert any("Aucune clé API nécessaire" in item.value for item in app.caption)

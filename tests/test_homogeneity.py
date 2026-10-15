@@ -102,3 +102,14 @@ def test_zero_transit_capacity_blocks_cycle():
     data.rooms[CENTRAL_STOCK] = replace(data.rooms[CENTRAL_STOCK], capacity=0)
     plan = plan_homogeneity(data, suggested_targets(data), CENTRAL_STOCK)
     assert not plan["groups"]
+
+
+def test_recovered_model_supplies_other_building_before_unused_model():
+    data = import_owned_computers(
+        b"room_id,model,quantity\nCBY-1,A,1\nCBY-1,Z,1\nBRS-1,Q,1\n"
+    )
+    data.inventory[CENTRAL_STOCK, "X"] = 1
+    plan = plan_homogeneity(data, {"CBY": "X", "BRS": "Z"}, CENTRAL_STOCK)
+    after = execute(data, plan)
+    assert after.inventory["BRS-1", "Z"] == 1
+    assert plan["groups"][0]["old_model"] == "Z"
