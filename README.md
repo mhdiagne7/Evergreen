@@ -9,7 +9,7 @@ Le fonctionnement repose sur deux choses distinctes :
 
 La démonstration est entièrement fictive. CBY y compte 25 classes à un poste, avec des modèles 7060, 7090, 7086 et 5043. MRT, UCU et STE possèdent aussi des classes et des réserves. Ces salles et distances ne représentent pas le campus réel. Ce projet n'est pas un outil officiel de l'université.
 
-## Lancer sur ce Mac
+## Ouvrir l'application sur cet ordinateur
 
 Ouvrir **Documents/Evergreen**, puis double-cliquer sur **Lancer-Evergreen.command**. Ou utiliser Terminal :
 
