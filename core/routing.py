@@ -29,6 +29,16 @@ def shortest_route(graph, source, destination):
         target = graph.nodes[destination]["building"]
         if origin == target:
             return Route([source, destination], None, "intra-bâtiment non évaluée")
+        matrix = graph.graph.get("building_routes")
+        if matrix:
+            result = matrix.get((origin, target))
+            if not result or result["status"] != "OK":
+                return None
+            return Route(
+                [source, destination],
+                result["distance_m"],
+                "itinéraire piéton Google Maps",
+            )
         distance = building_distance(origin, target)
         if distance is None:
             return None

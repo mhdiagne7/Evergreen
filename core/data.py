@@ -28,6 +28,9 @@ class Dataset:
     import_notes: tuple[str, ...] = ()
     returned_stock: dict[tuple[str, str], int] = field(default_factory=dict)
     model_years: dict[str, int] = field(default_factory=dict)
+    building_routes: dict[tuple[str, str], dict] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     def occupied(self, room):
         return sum(q for (r, _), q in self.inventory.items() if r == room)

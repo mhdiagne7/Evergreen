@@ -41,7 +41,7 @@ def apply_transfers(data, transfers):
             )
         if updated.inventory.get((move.source, move.model), 0) < move.quantity:
             raise ValueError(f"Stock insuffisant dans {move.source} pour {move.model}.")
-        if move.stock_kind not in {"any", "new", "returned"}:
+        if move.stock_kind not in {"any", "new", "returned", "regrouped"}:
             raise ValueError("Catégorie de stock inconnue.")
         source_key = move.source, move.model
         source_room = updated.rooms[move.source]

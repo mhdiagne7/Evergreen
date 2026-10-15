@@ -4,6 +4,7 @@ import streamlit as st
 
 from core.buildings import building_summary
 from core.export import csv_bytes
+from core.homogeneity import building_models, dominant_models
 from map_view import campus_map
 from ui.common import finite_places, table
 
@@ -40,6 +41,47 @@ def overview(data, models):
     building = st.selectbox(
         "Voir les salles du bâtiment", buildings, key="overview_building"
     )
+    st.subheader(f"{building} · Modèles présents")
+    counts = +building_models(data, building)
+    leaders = dominant_models(data, building)
+    total = sum(counts.values())
+    if len(leaders) == 1:
+        dominant = leaders[0]
+        st.write(
+            f"**Modèle principal : {dominant}** · {counts[dominant]} postes sur {total}"
+        )
+        st.progress(
+            counts[dominant] / total,
+            text=f"{100 * counts[dominant] / total:.1f} % du bâtiment est déjà regroupé sur ce modèle",
+        )
+    elif leaders:
+        st.caption(
+            "Modèles à égalité : "
+            + ", ".join(leaders)
+            + ". Choisis la cible dans Planifier Evergreen."
+        )
+    model_rows = [
+        {
+            "Modèle": model,
+            "Postes": quantity,
+            "Part (%)": round(100 * quantity / total, 1),
+        }
+        for model, quantity in sorted(
+            counts.items(), key=lambda item: (-item[1], item[0])
+        )
+    ]
+    if model_rows:
+        st.dataframe(
+            model_rows,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Part (%)": st.column_config.ProgressColumn(
+                    "Part du bâtiment", min_value=0, max_value=100, format="%.1f %%"
+                ),
+            },
+        )
+    st.write("**Détail des salles**")
     details = []
     for room, info in sorted(data.rooms.items()):
         if info.building != building:

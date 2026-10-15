@@ -38,6 +38,7 @@ def test_dashboard_and_import_validation(application):
 def test_plan_save_confirm_and_restart(application):
     app, store, key = application
     app.run()
+    app.radio(key="planning_mode").set_value("Objectifs manuels").run()
     app.selectbox(key="plan_building").select("CBY").run()
     app.multiselect(key="plan_models").set_value(["New"]).run()
     app.number_input(key="goal_CBY_New").set_value(2).run()
@@ -121,3 +122,34 @@ def test_import_diagnostics_are_collapsed_without_yellow_banner(application):
     assert any(
         expander.label == "Détails du contrôle de l’import" for expander in app.expander
     )
+
+
+def test_default_homogeneity_can_save_a_campus_cycle(tmp_path, monkeypatch):
+    from test_homogeneity import campus
+
+    path = tmp_path / "uniform.sqlite3"
+    monkeypatch.setenv("EVERGREEN_DB", str(path))
+    monkeypatch.delenv("EVERGREEN_INVENTORY", raising=False)
+    store = Store(path)
+    identifier = store.create_workspace("Campus", campus())
+    app = AppTest.from_file(str(APP)).run()
+    assert not app.exception
+    assert app.radio(key="planning_mode").value == "Regrouper par modèle dominant"
+    assert app.button(key="google_compute").disabled
+    app.button(key="uniform_calculate").click().run()
+    assert not app.exception
+    app.button(key="uniform_save").click().run()
+    assert not app.exception
+    batch = store.batches(identifier)[0]
+    assert batch["plan"]["mode"] == "homogenization"
+    assert store.load(identifier)[2] == 0
+    store.confirm_batch(identifier, batch["id"], [0], "Cycle complet réalisé")
+    assert store.load(identifier)[0].inventory["CBY-103", "X"] == 1
+
+
+def test_google_connection_does_not_run_without_a_key(application):
+    app, _, _ = application
+    app.run()
+    assert not app.exception
+    assert app.button(key="google_compute").disabled
+    assert any("Aucune distance Google Maps" in item.value for item in app.info)

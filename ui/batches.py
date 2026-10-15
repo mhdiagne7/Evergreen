@@ -18,7 +18,7 @@ def batches_view(store, identifier, data, revision):
             table(operation_rows(plan))
             st.download_button(
                 "Télécharger la feuille de route",
-                csv_bytes(transfer_rows(plan, data)),
+                csv_bytes(transfer_rows(plan, data, for_export=True)),
                 f"lot-{batch['id'][:8]}.csv",
                 "text/csv",
                 key="download_" + batch["id"],
@@ -36,13 +36,17 @@ def batches_view(store, identifier, data, revision):
                     ]
                     with st.form("confirm_" + batch["id"]):
                         selected = st.multiselect(
-                            "Salles dont le remplacement est entièrement terminé",
+                            "Opérations entièrement réalisées",
                             remaining,
-                            format_func=lambda i: plan["groups"][i]["room"],
+                            format_func=lambda i: (
+                                f"{i + 1}. {plan['groups'][i]['room']}"
+                            ),
                             key="complete_" + batch["id"],
                         )
                         st.caption(
-                            "Pour chaque salle cochée, le retrait, l'installation et le retour doivent tous être réalisés. Respecter l'ordre de la feuille de route ; certains stocks proviennent d'une étape précédente."
+                            "Chaque opération cochée doit être entièrement réalisée. "
+                            "Une ligne avec ↔ concerne plusieurs salles : toutes ses étapes sont indivisibles. "
+                            "Respecter l’ordre de la feuille de route ; certains stocks proviennent d’une étape précédente."
                         )
                         note = st.text_input(
                             "Note de réalisation (intervenant, date ou référence)",

@@ -25,6 +25,7 @@ def finite_places(value):
 def operation_rows(plan):
     return [
         {
+            "Opération": index,
             "Salle à équiper": group["room"],
             "Modèle actuel": group["old_model"],
             "Modèle à installer": group["new_model"],
@@ -32,6 +33,8 @@ def operation_rows(plan):
             "Catégorie": (
                 "Retour réaffecté"
                 if group.get("stock_kind") == "returned"
+                else "Regroupement de modèles"
+                if group.get("stock_kind") == "regrouped"
                 else "Stock neuf Morisset"
                 if group.get("stock_kind") == "new"
                 else "Stock disponible"
@@ -40,16 +43,19 @@ def operation_rows(plan):
             "Distance": group["distance_type"],
             "État": "Fait" if group.get("completed") else "À faire",
         }
-        for group in plan["groups"]
+        for index, group in enumerate(plan["groups"], 1)
     ]
 
 
-def transfer_rows(plan, data):
+def transfer_rows(plan, data, for_export=False):
     graph = build_graph(data)
     rows = []
     for group in plan["groups"]:
         for index, move in enumerate(group["transfers"], 1):
             route = shortest_route(graph, move["source"], move["destination"])
+            google_export = (
+                for_export and route and "Google Maps" in route.distance_label
+            )
             rows.append(
                 {
                     "Salle concernée": group["room"],
@@ -60,8 +66,12 @@ def transfer_rows(plan, data):
                     "Destination": move["destination"],
                     "Modèle": move["model"],
                     "Quantité": move["quantity"],
-                    "Distance (m)": route.distance_m if route else None,
-                    "Type de distance": route.distance_label
+                    "Distance (m)": route.distance_m
+                    if route and not google_export
+                    else None,
+                    "Type de distance": "Consulter Google Maps dans l’application"
+                    if google_export
+                    else route.distance_label
                     if route
                     else "Non disponible",
                 }

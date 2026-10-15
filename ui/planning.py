@@ -6,9 +6,22 @@ from core.buildings import plan_building
 from core.export import csv_bytes
 from core.reuse import add_reuse_operations
 from ui.common import operation_rows, refresh, table, transfer_rows, transport_summary
+from ui.homogeneity import homogenization
 
 
 def planning(store, identifier, data, models, revision):
+    mode = st.radio(
+        "Type de planification",
+        ["Regrouper par modèle dominant", "Objectifs manuels"],
+        key="planning_mode",
+    )
+    if mode == "Regrouper par modèle dominant":
+        homogenization(store, identifier, data, models, revision)
+    else:
+        manual_planning(store, identifier, data, models, revision)
+
+
+def manual_planning(store, identifier, data, models, revision):
     st.subheader("Préparer un lot Evergreen pour un bâtiment")
     st.write(
         "L'objectif est le nombre total de classes à équiper avec chaque modèle après les déplacements. Les classes déjà équipées comptent dans cet objectif."
@@ -115,7 +128,7 @@ def planning(store, identifier, data, models, revision):
         )
         st.download_button(
             "Exporter la feuille de route",
-            csv_bytes(transfer_rows(plan, data)),
+            csv_bytes(transfer_rows(plan, data, for_export=True)),
             "evergreen-feuille-de-route.csv",
             "text/csv",
         )

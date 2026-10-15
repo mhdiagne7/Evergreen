@@ -66,8 +66,16 @@ def map_rows(data, models, selected_model=None):
         properties = feature["properties"]
         details = (
             "<br>".join(
-                f"{escape(model)} : {count}"
-                for model, count in sorted(installed.items())
+                (
+                    '<div style="margin-top:9px">'
+                    f'<div style="display:flex;justify-content:space-between;gap:14px">'
+                    f"<span>{escape(model)}</span><b>{count} · {100 * count / total:.0f}%</b></div>"
+                    '<div style="height:4px;background:#ffffff30;margin-top:4px;border-radius:3px">'
+                    f'<div style="height:4px;width:{100 * count / total:.1f}%;background:rgb({",".join(map(str, colors[model][:3]))});border-radius:3px"></div></div></div>'
+                )
+                for model, count in sorted(
+                    installed.items(), key=lambda item: (-item[1], item[0])
+                )
                 if count
             )
             or "Aucun poste installé"
@@ -84,9 +92,29 @@ def map_rows(data, models, selected_model=None):
                 "stock": stock,
                 "new_stock": stock - returned,
                 "returned_stock": returned,
+                "stock_summary": (
+                    f"Morisset : {stock - returned} en stock neuf · {returned} retours"
+                    if building == "MRT"
+                    else "Aucun stock local : stock central à Morisset"
+                ),
                 "quantity": quantity,
                 "details": details,
                 "dominant": dominant or "Aucun",
+                "dominant_share": round(100 * installed[dominant] / total, 1)
+                if dominant
+                else 0,
+                "model_types": sum(count > 0 for count in installed.values()),
+                "dominance_label": (
+                    escape(dominant)
+                    if dominant
+                    and sum(
+                        count == installed[dominant] for count in installed.values()
+                    )
+                    == 1
+                    else "Égalité entre modèles"
+                    if dominant
+                    else "Aucun modèle installé"
+                ),
             }
         )
     return rows, missing, colors
@@ -154,7 +182,9 @@ def campus_map(data, models):
         get_background_color=[255, 255, 255, 215],
     )
     layers = [layer, labels]
-    if st.checkbox("Comparer la distance entre deux bâtiments", key="map_compare"):
+    if st.checkbox(
+        "Comparer la distance à vol d’oiseau entre deux bâtiments", key="map_compare"
+    ):
         codes = [row["code"] for row in rows]
         left, right = st.columns(2)
         origin = left.selectbox(
@@ -194,14 +224,20 @@ def campus_map(data, models):
         map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
         tooltip={
             "html": (
-                "<b>{code} — {name}</b><br>"
-                "{rooms} salles · {installed} postes installés<br>"
-                "Stock neuf : {new_stock} · Retours : {returned_stock}<hr>{details}"
+                '<div style="max-width:280px;white-space:normal">'
+                '<b style="font-size:15px">{code}</b> · {name}<br>'
+                "{rooms} salles · {installed} postes · {model_types} modèles<br>"
+                '<div style="margin-top:8px"><b>Principal : {dominance_label}</b> · {dominant_share}%</div>'
+                "{details}<hr>{stock_summary}</div>"
             ),
             "style": {
                 "backgroundColor": "#183c2f",
                 "color": "white",
                 "fontSize": "13px",
+                "maxWidth": "300px",
+                "overflowWrap": "anywhere",
+                "borderRadius": "10px",
+                "padding": "14px",
             },
         },
     )
@@ -221,7 +257,8 @@ def campus_map(data, models):
             f'<span style="display:inline-block;margin:0 16px 6px 0">'
             f'<span style="color:rgb({rgb})">●</span> {escape(name)}</span>'
         )
-    st.markdown("".join(legend), unsafe_allow_html=True)
+    with st.expander("Légende des modèles"):
+        st.markdown("".join(legend), unsafe_allow_html=True)
     st.caption(
         "Survole un bâtiment pour voir ses modèles et quantités ; clique pour son détail. "
         "Sans filtre, la couleur indique le modèle dominant. En gris : aucun poste du modèle choisi. "

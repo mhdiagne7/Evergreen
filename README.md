@@ -77,6 +77,71 @@ capacités et trajets validés ; il ne crée pas automatiquement de stock MRT.
 
 ## Carte interactive et distances
 
+### Modèles présents et objectif de regroupement
+
+Le survol d'un bâtiment présente les modèles par quantité décroissante, leur
+nombre de postes, leur pourcentage et une barre colorée. Le détail du bâtiment
+affiche sa répartition et la part du modèle principal. Une égalité est signalée.
+
+Dans **Planifier Evergreen**, le mode par défaut est **Regrouper par modèle
+dominant**. Chaque bâtiment reçoit comme cible son modèle installé le plus
+présent ; le stock de Morisset n'entre pas dans ce calcul. Une égalité nécessite
+un choix explicite. Les cibles peuvent être ajustées avant le calcul.
+
+Le plan utilise les quantités disponibles à Morisset, puis cherche des cycles
+de redistribution entre les modèles minoritaires des bâtiments sélectionnés.
+Un modèle déjà conforme à la cible de son bâtiment n'est pas prélevé. Un cycle
+peut déplacer un poste via Morisset pour libérer une salle, puis redistribuer
+les autres directement entre salles. Les salles multipostes sont prises en
+compte unité par unité. Toutes les étapes d'un cycle sont confirmées ensemble.
+
+Les générations connues comme plus récentes sont protégées par défaut ; cette
+protection peut être désactivée explicitement pour privilégier l'uniformité.
+Une génération inconnue n'est pas présentée comme une amélioration matérielle.
+Les manques de quantité ou de capacité restent visibles. L'algorithme est
+déterministe et progressif, sans garantie d'optimum global. Les objectifs
+manuels de renouvellement restent accessibles dans l'autre mode.
+
+### Distances piétonnes Google Maps
+
+Dans **Salles et trajets**, le panneau Google Maps prépare la matrice de tous
+les bâtiments recensés, en mode **marche à pied**. La connexion nécessite une
+clé d'un projet Google Cloud avec **Routes API activée** et facturation
+configurée. Le lien Google Maps partagé dans le chat ne fournit pas cette clé.
+
+Renseigner la clé dans le champ local masqué, ou copier
+`.streamlit/secrets.example.toml` vers `.streamlit/secrets.toml` et la renseigner
+dans ce fichier ignoré par Git. Une variable d'environnement
+`GOOGLE_MAPS_API_KEY` est aussi acceptée. Ne jamais envoyer la clé dans le chat,
+un commit ou une capture d'écran. Les requêtes envoient uniquement les
+coordonnées publiques des bâtiments, sans modèles, inventaires ni salles.
+
+Un bouton lance les calculs après confirmation du nombre d'éléments API. Pour
+27 bâtiments, 729 éléments comprennent 702 trajets distincts et les diagonales.
+Les requêtes sont découpées pour respecter la limite de 625 éléments. Les
+directions aller et retour sont indépendantes. Un trajet indisponible est
+signalé et n'est pas remplacé silencieusement par une distance à vol d'oiseau.
+Aucun appel facturable n'est effectué automatiquement au démarrage.
+
+Les résultats portent l'attribution **Google Maps** et sont affichés dans un
+tableau distinct. La planification utilise ces distances lorsqu'une matrice
+valide est active. Les résultats restent dans la session de travail : ils ne
+sont pas enregistrés dans SQLite ni dans les feuilles de route CSV produites
+par l'application. Les lots conservent les opérations et nécessitent une
+nouvelle consultation pour leurs distances. Le fond de carte CARTO ci-dessous
+reste indépendant : aucun tracé Google n'est superposé dessus.
+
+Les points de départ et d'arrivée sont les points publics des bâtiments : un
+trajet calculé par Google Maps n'est pas une mesure de terrain, un itinéraire
+intérieur ni une validation des entrées pour le transport de matériel. Sans
+clé ni calcul, l'application continue d'indiquer **à vol d'oiseau**.
+
+Documentation : [Routes API et matrices](https://developers.google.com/maps/documentation/routes/compute_route_matrix),
+[facturation](https://developers.google.com/maps/documentation/routes/usage-and-billing),
+[attribution et utilisation des résultats](https://developers.google.com/maps/documentation/routes/policies).
+
+### Géographie du campus
+
 Les contours et coordonnées proviennent des données publiques intégrées à la
 [carte officielle de l'Université d'Ottawa](https://www.uottawa.ca/about-us/administration-services/facilities/campus-maps),
 extraites le 15 octobre 2026. `data/public/buildings.geojson` contient uniquement

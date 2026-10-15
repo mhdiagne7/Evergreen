@@ -4,6 +4,7 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -238,13 +239,20 @@ class Store:
             )
 
     def save_batch(self, identifier, revision, name, plan):
+        plan = deepcopy(plan)
+        for group in plan["groups"]:
+            if "Google Maps" in group.get("distance_type", ""):
+                group["delivery_m"] = None
+                group["distance_type"] = "Trajet à recalculer dans la session"
         if not plan["groups"] or not name.strip():
             raise ValueError("Le lot doit avoir un nom et au moins un déplacement.")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row, data = self._read(db, identifier)
             self._check_revision(row, revision)
-            self._validate_plan(data, plan["groups"])
+            self._validate_plan(
+                data, plan["groups"], plan.get("mode") == "homogenization"
+            )
             batch_id = uuid.uuid4().hex
             db.execute(
                 "INSERT INTO batches VALUES (?,?,?,?,?,?,?)",
@@ -260,13 +268,17 @@ class Store:
             )
         return batch_id
 
-    def _validate_plan(self, data, groups):
+    def _validate_plan(self, data, groups, allow_regrouping=False):
         graph = build_graph(data)
         for group in groups:
             transfers = [Transfer(**move) for move in group["transfers"]]
             if not transfers:
                 raise ValueError("Une opération doit contenir un déplacement.")
             for transfer in transfers:
+                if transfer.stock_kind == "regrouped" and not allow_regrouping:
+                    raise ValueError(
+                        "Cette catégorie de déplacement exige un lot de regroupement."
+                    )
                 if transfer.stock_kind != "returned":
                     continue
                 installed = [
@@ -330,7 +342,9 @@ class Store:
                 )
             # L'ordre du plan est conservé, même si la sélection est différente.
             chosen = [plan["groups"][i] for i in sorted(completed)]
-            updated = self._validate_plan(data, chosen)
+            updated = self._validate_plan(
+                data, chosen, plan.get("mode") == "homogenization"
+            )
             self._save(db, identifier, updated)
             for i in completed:
                 plan["groups"][i]["completed"] = True

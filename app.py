@@ -11,6 +11,7 @@ from core.store import DEFAULT_DB, Store
 from room_views import recommendations, show_route
 from ui.batches import batches_view
 from ui.dashboard import overview
+from ui.distances import active_matrix, google_distances
 from ui.imports import bootstrap_inventory, sidebar
 from ui.planning import planning
 from ui.stock import stock_view
@@ -31,12 +32,21 @@ def main():
         )
         return
     data, models, revision, label = store.load(identifier)
+    packet = active_matrix(data)
+    if packet:
+        data.building_routes = packet["routes"]
+    distance_context = packet["calculated_at"] if packet else "geodesic"
+    if st.session_state.get("distance_context") != distance_context:
+        st.session_state.pop("preview", None)
+        st.session_state.pop("uniform_preview", None)
+        st.session_state.distance_context = distance_context
     context = identifier, revision
     if st.session_state.get("active_context") != context:
         for key in list(st.session_state):
             if key.startswith(("choice_", "goal_", "plan_", "overview_", "map_")):
                 del st.session_state[key]
         st.session_state.pop("preview", None)
+        st.session_state.pop("uniform_preview", None)
         st.session_state.active_context = context
     st.caption(f"{label} · Version de l’inventaire : {revision}")
     if data.import_notes:
@@ -45,8 +55,12 @@ def main():
                 st.caption(note)
     if data.distance_mode == "geodesic":
         st.caption(
-            "Stock central à MRT · Distances à vol d’oiseau entre bâtiments, "
-            "sans estimation des déplacements intérieurs. "
+            (
+                "Stock central à MRT · Trajets piétons Google Maps calculés dans cette session, "
+                if packet
+                else "Stock central à MRT · Distances à vol d’oiseau entre bâtiments, "
+            )
+            + "sans estimation des déplacements intérieurs. "
             "Les capacités des salles sont limitées aux postes recensés à l’import."
         )
     if "notice" in st.session_state:
@@ -69,6 +83,8 @@ def main():
     with pages[3]:
         stock_view(store, identifier, data, models, revision)
     with pages[4]:
+        google_distances(data)
+        st.divider()
         graph = build_graph(data)
         rooms = sorted(data.rooms)
         if not rooms:
