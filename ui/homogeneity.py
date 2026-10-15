@@ -5,7 +5,6 @@ import streamlit as st
 from core.export import csv_bytes
 from core.homogeneity import (
     building_models,
-    dominant_models,
     plan_homogeneity,
     suggested_targets,
 )
@@ -26,20 +25,23 @@ def homogenization(store, identifier, data, models, revision):
         "Bâtiments à regrouper", buildings, default=buildings, key="uniform_buildings"
     )
     targets = suggested_targets(data)
-    configured = {}
-    for building in selected:
-        leaders = dominant_models(data, building)
-        if len(leaders) != 1:
-            options = ["Choisir un modèle"] + list(models)
-            selected_model = st.selectbox(
-                f"{building} · égalité ou absence de modèle dominant",
-                options,
-                key="uniform_tie_" + building,
-            )
-            if selected_model != options[0]:
-                configured[building] = selected_model
-        else:
-            configured[building] = targets[building]
+    configured = {
+        building: targets[building] for building in selected if building in targets
+    }
+    ties = [building for building in selected if building not in targets]
+    if ties:
+        with st.expander(
+            f"Choisir les cibles de {len(ties)} bâtiment(s) à égalité", expanded=True
+        ):
+            for building in ties:
+                options = ["Choisir un modèle"] + list(models)
+                selected_model = st.selectbox(
+                    f"{building} · modèle cible",
+                    options,
+                    key="uniform_tie_" + building,
+                )
+                if selected_model != options[0]:
+                    configured[building] = selected_model
     with st.expander("Modifier un modèle cible"):
         override = st.selectbox(
             "Bâtiment à ajuster", ["Aucun"] + selected, key="uniform_override_building"

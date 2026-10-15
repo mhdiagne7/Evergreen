@@ -80,7 +80,7 @@ capacités et trajets validés ; il ne crée pas automatiquement de stock MRT.
 ### Modèles présents et objectif de regroupement
 
 Le survol d'un bâtiment présente les modèles par quantité décroissante, leur
-nombre de postes, leur pourcentage et une barre colorée. Le détail du bâtiment
+nombre de postes et leur pourcentage, en lignes de texte distinctes. Le détail du bâtiment
 affiche sa répartition et la part du modèle principal. Une égalité est signalée.
 
 Dans **Planifier Evergreen**, le mode par défaut est **Regrouper par modèle
@@ -107,7 +107,13 @@ manuels de renouvellement restent accessibles dans l'autre mode.
 Dans **Salles et trajets**, sélectionner le départ et l’arrivée puis ouvrir
 le lien Google Maps. La distance et la durée se consultent directement dans
 Google Maps, sans clé API ni facturation configurée dans Evergreen.
-La planification utilise les distances à vol d’oiseau, explicitement indiquées.
+Pour utiliser la distance consultée dans un plan, ouvrir **Utiliser une distance
+de marche dans la planification**, saisir les mètres et confirmer la vérification.
+La valeur est conservée localement, datée et appliquée uniquement au sens renseigné.
+Le retour est ajouté seulement si son égalité a été vérifiée explicitement.
+Chaque étape indique la source de sa distance et fournit le lien Google Maps.
+Sans distance renseignée, le calcul utilise Haversine et affiche **à vol d’oiseau**.
+Aucun navigateur robotisé ni appel Google Maps API ne récupère les valeurs.
 
 ### Géographie du campus
 
@@ -249,3 +255,41 @@ partielles, données géographiques, carte et interactions Streamlit.
 La configuration `ci/github-actions-tests.yml` reste un modèle à activer avec
 les droits GitHub appropriés ; une exécution locale ne prouve pas son exécution
 sur les autres plateformes.
+
+## Regroupement par blocs proches
+
+Le mode **Regrouper par blocs proches** propose des groupes disjoints de petits
+parcs (par défaut au plus 5 postes par bâtiment). Toutes les paires d’un bloc
+respectent le diamètre choisi (200 m à vol d’oiseau par défaut) : une chaîne de
+voisins n’entraîne pas le regroupement de bâtiments éloignés. Les seuils sont
+modifiables et un bloc personnalisé peut être composé manuellement.
+
+Un modèle commun est suggéré selon la quantité installée dans le bloc ; une
+égalité exige un choix. Le tableau compare les modèles présents, les postes à
+remplacer, le stock neuf ou retourné disponible à Morisset et les besoins restant
+à couvrir hors bloc. Les salles restent dans leurs bâtiments. Les autres
+bâtiments ayant une cible dominante peuvent participer aux échanges, sur option.
+Les étapes d’un échange lié restent indivisibles et contrôlées par le moteur
+existant. Les pénuries sont affichées, jamais compensées par du stock inventé.
+
+## Formats physiques des modèles
+
+Le catalogue est organisé **Tour → SFF / Slim → Micro**, puis les portables
+séparément et les formats inconnus à confirmer. Lorsque des dimensions exactes
+sont documentées, l’encombrement est calculé par H × L × P et les modèles sont
+triés au sein de leur catégorie par volume décroissant. Ce volume géométrique
+n’est ni une capacité utile du boîtier ni un classement de performances.
+
+`data/public/model_formats.json` contient seulement des noms et caractéristiques
+publics avec les liens Dell. Un numéro seul (3060, 5000, 5070…) ne prouve pas
+le format : plusieurs variantes existent. Le format peut être confirmé
+localement après vérification des boîtiers concernés. Les références non
+installées sont séparées par un filtre et ne créent aucun poste en inventaire.
+Le fichier système de référence n’est pas importé en tant que stock.
+
+Une réception simple peut ajouter directement un nouveau modèle et sa quantité.
+Une réception multiple valide toutes les lignes et la capacité avant toute
+écriture : une erreur laisse le catalogue et les quantités inchangés. Les
+nouveaux postes sont ajoutés uniquement au stock neuf de Morisset ; les retours
+ne changent pas. La remise à zéro du stock est une correction explicite et
+historisée ; elle ne supprime aucun ordinateur installé dans une salle.

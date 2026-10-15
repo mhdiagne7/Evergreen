@@ -4,13 +4,19 @@ import math
 
 import streamlit as st
 
+from core.google_routes import directions_url
 from core.graph import build_graph
 from core.routing import shortest_route
 
 
 def table(rows):
     if rows:
-        st.dataframe(rows, hide_index=True, width="stretch")
+        config = {
+            key: st.column_config.LinkColumn(key, display_text="Ouvrir le trajet")
+            for key in rows[0]
+            if key == "Trajet Google Maps"
+        }
+        st.dataframe(rows, hide_index=True, width="stretch", column_config=config)
 
 
 def refresh(message):
@@ -66,6 +72,13 @@ def transfer_rows(plan, data, for_export=False):
                     "Destination": move["destination"],
                     "Modèle": move["model"],
                     "Quantité": move["quantity"],
+                    "Trajet Google Maps": directions_url(
+                        data.rooms[move["source"]].building,
+                        data.rooms[move["destination"]].building,
+                    )
+                    if data.rooms[move["source"]].building
+                    != data.rooms[move["destination"]].building
+                    else None,
                     "Distance (m)": route.distance_m
                     if route and not google_export
                     else None,

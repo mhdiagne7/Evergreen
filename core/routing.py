@@ -29,6 +29,13 @@ def shortest_route(graph, source, destination):
         target = graph.nodes[destination]["building"]
         if origin == target:
             return Route([source, destination], None, "intra-bâtiment non évaluée")
+        walking = graph.graph.get("walking_routes", {}).get((origin, target))
+        if walking:
+            return Route(
+                [source, destination],
+                walking["distance_m"],
+                "de marche renseignée manuellement",
+            )
         distance = building_distance(origin, target)
         if distance is None:
             return None

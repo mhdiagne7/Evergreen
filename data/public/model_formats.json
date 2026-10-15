@@ -1,0 +1,141 @@
+{
+  "OptiPlex 5050": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles"
+  },
+  "OptiPlex 5000": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles",
+    "url": "https://www.dell.com/community/assets/community/687062f5-603c-4f5f-ab9d-31aa7cacb376/optiplex5000towersspecsheet-fc1778fc-c717-4e83-b471-86c9be4b6f14-618931170.pdf"
+  },
+  "OptiPlex SFF Plus 7010": {
+    "format": "SFF / Slim",
+    "evidence": "Format SFF / Slim explicite dans le nom constructeur",
+    "dimensions_mm": [
+      290,
+      92.6,
+      292.8
+    ],
+    "url": "https://www.dell.com/support/manuals/en-us/optiplex-7010-plus-small-ff/opti_7010_sff_plus_om/dimensions-and-weight?guid=guid-476edaac-b30e-4ef6-b273-319a3db074b1"
+  },
+  "OptiPlex 5040": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles"
+  },
+  "OptiPlex SFF Plus 7020": {
+    "format": "SFF / Slim",
+    "evidence": "Format SFF / Slim explicite dans le nom constructeur",
+    "dimensions_mm": [
+      290,
+      92.6,
+      292.8
+    ],
+    "url": "https://www.dell.com/support/manuals/en-fm/optiplex-7020-plus-small-ff/optiplex-sff-plus-7020-owners-manual/dimensions-and-weight?guid=guid-476edaac-b30e-4ef6-b273-319a3db074b1&lang=en-us"
+  },
+  "OptiPlex 7010": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles"
+  },
+  "OptiPlex 5070": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles"
+  },
+  "Dell Pro Slim QCS1250": {
+    "format": "SFF / Slim",
+    "evidence": "Format SFF / Slim explicite dans le nom constructeur"
+  },
+  "OptiPlex 5090": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles"
+  },
+  "OptiPlex 7050": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles"
+  },
+  "Precision 3660": {
+    "format": "Tour",
+    "evidence": "Precision 3660 Tower — Dell",
+    "url": "https://www.delltechnologies.com/asset/en-us/products/workstations/technical-support/precision-3660t-technical-guidebook.pdf"
+  },
+  "OptiPlex Micro Plus 7010": {
+    "format": "Micro",
+    "evidence": "Format Micro explicite dans le nom constructeur"
+  },
+  "OptiPlex 3060": {
+    "format": "À confirmer",
+    "evidence": "3060 existe notamment en Micro et SFF : format local à confirmer",
+    "url": "https://www.dell.com/support/manuals/en-jm/optiplex-3060-micro/optiplex_3060_micro_setup_and_specs/Physical-system-dimensions?guid=guid-9a0f722a-6558-4af4-a311-09d14352eec6&lang=en-us"
+  },
+  "OptiPlex 7020": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles"
+  },
+  "OptiPlex 5080": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles"
+  },
+  "Dell Pro Slim Plus QBS1250": {
+    "format": "SFF / Slim",
+    "evidence": "Format SFF / Slim explicite dans le nom constructeur",
+    "dimensions_mm": [
+      303.5,
+      95,
+      293
+    ],
+    "url": "https://www.dell.com/support/manuals/en-ag/dell-pro-qbs1250-plus-slim-desktop/dell-pro-slim-plus-qbs1250_om/dimensions-and-weight?guid=guid-362133ff-c5e8-4acd-a164-4ce876572659&lang=en-us"
+  },
+  "OptiPlex 9020M": {
+    "format": "Micro",
+    "evidence": "Format Micro explicite dans le nom constructeur"
+  },
+  "OptiPlex Micro Plus 7020": {
+    "format": "Micro",
+    "evidence": "Format Micro explicite dans le nom constructeur",
+    "dimensions_mm": [
+      182,
+      36,
+      178
+    ],
+    "url": "https://www.dell.com/support/manuals/en-ie/optiplex-7020-plus-micro/optiplex-micro-plus-7020-owners-manual/dimensions-and-weight?guid=guid-476edaac-b30e-4ef6-b273-319a3db074b1&lang=en-us"
+  },
+  "OptiPlex 7060": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles"
+  },
+  "Dell Pro Micro QCM1250": {
+    "format": "Micro",
+    "evidence": "Format Micro explicite dans le nom constructeur",
+    "dimensions_mm": [
+      182,
+      36,
+      178
+    ],
+    "url": "https://www.dell.com/support/manuals/en-lk/dell-pro-qcm1250-micro/dell_pro_micro_qcm1250_om/dimensions-and-weight?guid=guid-476edaac-b30e-4ef6-b273-319a3db074b1&lang=en-us"
+  },
+  "Dell Pro Micro Plus QBM1250": {
+    "format": "Micro",
+    "evidence": "Format Micro explicite dans le nom constructeur"
+  },
+  "OptiPlex 3050": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles"
+  },
+  "Dell Pro Slim QCS1255": {
+    "format": "SFF / Slim",
+    "evidence": "Format SFF / Slim explicite dans le nom constructeur",
+    "dimensions_mm": [
+      303.5,
+      95,
+      293
+    ],
+    "url": "https://www.dell.com/support/manuals/en-in/dell-pro-qcs1255-slim-desktop/dell-pro-slim-qcs1255_om/dimensions-and-weight?guid=guid-362133ff-c5e8-4acd-a164-4ce876572659&lang=en-us"
+  },
+  "Latitude 7650": {
+    "format": "Portable",
+    "evidence": "Gamme portable Latitude ; non comparable aux boîtiers de bureau"
+  },
+  "OptiPlex 7070": {
+    "format": "À confirmer",
+    "evidence": "Nom de gamme seul ; plusieurs boîtiers possibles"
+  }
+}

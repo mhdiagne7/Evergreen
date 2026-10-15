@@ -39,6 +39,7 @@ def main():
                 del st.session_state[key]
         st.session_state.pop("preview", None)
         st.session_state.pop("uniform_preview", None)
+        st.session_state.pop("block_preview", None)
         st.session_state.active_context = context
     st.caption(f"{label} · Version de l’inventaire : {revision}")
     if data.import_notes:
@@ -46,11 +47,13 @@ def main():
             for note in data.import_notes:
                 st.caption(note)
     if data.distance_mode == "geodesic":
-        st.caption(
-            "Stock central à MRT · Distances à vol d’oiseau entre bâtiments, "
-            "sans estimation des déplacements intérieurs. "
-            "Les capacités des salles sont limitées aux postes recensés à l’import."
-        )
+        st.caption("Stock central à Morisset · Préparation des interventions Evergreen")
+        with st.expander("Repères de planification et distances"):
+            st.caption(
+                "Stock central à Morisset · Distances de marche renseignées quand disponibles, sinon à vol d’oiseau, "
+                "sans estimation des déplacements intérieurs. "
+                "Les capacités des salles sont limitées aux postes recensés à l’import."
+            )
     if "notice" in st.session_state:
         st.success(st.session_state.pop("notice"))
     pages = st.tabs(
@@ -71,7 +74,7 @@ def main():
     with pages[3]:
         stock_view(store, identifier, data, models, revision)
     with pages[4]:
-        google_distances(data)
+        google_distances(data, store, identifier, revision)
         st.divider()
         graph = build_graph(data)
         rooms = sorted(data.rooms)

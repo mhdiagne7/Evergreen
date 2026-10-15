@@ -29,6 +29,9 @@ class Dataset:
     returned_stock: dict[tuple[str, str], int] = field(default_factory=dict)
     model_years: dict[str, int] = field(default_factory=dict)
 
+    model_formats: dict[str, str] = field(default_factory=dict)
+    walking_routes: dict[tuple[str, str], dict] = field(default_factory=dict)
+
     def occupied(self, room):
         return sum(q for (r, _), q in self.inventory.items() if r == room)
 

@@ -5,6 +5,7 @@ import streamlit as st
 from core.buildings import plan_building
 from core.export import csv_bytes
 from core.reuse import add_reuse_operations
+from ui.block_planning import block_planning
 from ui.common import operation_rows, refresh, table, transfer_rows, transport_summary
 from ui.homogeneity import homogenization
 
@@ -12,11 +13,17 @@ from ui.homogeneity import homogenization
 def planning(store, identifier, data, models, revision):
     mode = st.radio(
         "Type de planification",
-        ["Regrouper par modèle dominant", "Objectifs manuels"],
+        [
+            "Regrouper par modèle dominant",
+            "Regrouper par blocs proches",
+            "Objectifs manuels",
+        ],
         key="planning_mode",
     )
     if mode == "Regrouper par modèle dominant":
         homogenization(store, identifier, data, models, revision)
+    elif mode == "Regrouper par blocs proches":
+        block_planning(store, identifier, data, models, revision)
     else:
         manual_planning(store, identifier, data, models, revision)
 

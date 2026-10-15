@@ -33,6 +33,10 @@ def encode_data(data):
                 for (room, model), quantity in sorted(data.returned_stock.items())
             ],
             "model_years": data.model_years,
+            "model_formats": data.model_formats,
+            "walking_routes": [
+                [a, b, value] for (a, b), value in sorted(data.walking_routes.items())
+            ],
         },
         ensure_ascii=False,
     )
@@ -55,6 +59,8 @@ def decode_data(raw):
             for room, model, quantity in content.get("returned_stock", [])
         },
         content.get("model_years", {}),
+        content.get("model_formats", {}),
+        {(a, b): value for a, b, value in content.get("walking_routes", [])},
     )
 
 
@@ -190,6 +196,159 @@ class Store:
                 "Entrée de stock",
                 note.strip(),
                 {"room": room, "model": model, "quantity": quantity},
+            )
+
+    def receive_many(self, identifier, items, revision, note=""):
+        """Une réception, plusieurs modèles, une seule transaction et révision."""
+        from core.campus import CENTRAL_STOCK
+
+        if not items:
+            raise ValueError("Ajouter au moins un modèle et une quantité.")
+        quantities = {}
+        for item in items:
+            model = str(item.get("model", "")).strip()
+            quantity = item.get("quantity")
+            if not model or model == "*" or len(model) > 160:
+                raise ValueError("Saisir un nom de modèle valide.")
+            if (
+                isinstance(quantity, bool)
+                or not isinstance(quantity, int)
+                or quantity <= 0
+            ):
+                raise ValueError("Chaque quantité doit être un entier positif.")
+            quantities[model] = quantities.get(model, 0) + quantity
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row, data = self._read(db, identifier)
+            self._check_revision(row, revision)
+            stock = data.rooms.get(CENTRAL_STOCK)
+            if stock is None or stock.room_type != "storage" or stock.building != "MRT":
+                raise ValueError("Définir le stock central à Morisset.")
+            if data.available(CENTRAL_STOCK) < sum(quantities.values()):
+                raise ValueError("La capacité du stock central est insuffisante.")
+            if any(not stock.accepts(model) for model in quantities):
+                raise ValueError("Un modèle n’est pas autorisé au stock central.")
+            models = set(json.loads(row["models"]))
+            for model, quantity in quantities.items():
+                data.inventory[CENTRAL_STOCK, model] = (
+                    data.inventory.get((CENTRAL_STOCK, model), 0) + quantity
+                )
+                models.add(model)
+            db.execute(
+                "UPDATE workspaces SET models=? WHERE id=?",
+                (json.dumps(sorted(models)), identifier),
+            )
+            self._save(db, identifier, data)
+            self._event(
+                db,
+                identifier,
+                "Réception multiple",
+                note.strip(),
+                {"room": CENTRAL_STOCK, "items": quantities},
+            )
+
+    def reset_central_stock(self, identifier, revision, note):
+        """Correction explicite des quantités, sans toucher aux postes installés."""
+        from core.campus import CENTRAL_STOCK
+
+        if not note.strip():
+            raise ValueError("Indiquer le motif de remise à zéro.")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row, data = self._read(db, identifier)
+            self._check_revision(row, revision)
+            before = {
+                model: quantity
+                for (room, model), quantity in data.inventory.items()
+                if room == CENTRAL_STOCK
+            }
+            data.inventory = {
+                key: q for key, q in data.inventory.items() if key[0] != CENTRAL_STOCK
+            }
+            data.returned_stock = {
+                key: q
+                for key, q in data.returned_stock.items()
+                if key[0] != CENTRAL_STOCK
+            }
+            self._save(db, identifier, data)
+            self._event(
+                db,
+                identifier,
+                "Stock central remis à zéro",
+                note.strip(),
+                {"before": before},
+            )
+
+    def set_model_format(self, identifier, model, form, revision):
+        from core.model_catalog import FORMATS
+
+        if form not in FORMATS:
+            raise ValueError("Format physique inconnu.")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row, data = self._read(db, identifier)
+            self._check_revision(row, revision)
+            if model not in json.loads(row["models"]):
+                raise ValueError("Modèle inconnu dans le catalogue local.")
+            if form == "À confirmer":
+                data.model_formats.pop(model, None)
+            else:
+                data.model_formats[model] = form
+            self._save(db, identifier, data)
+            self._event(
+                db,
+                identifier,
+                "Format physique",
+                "Confirmation locale du boîtier",
+                {"model": model, "format": form},
+            )
+
+    def set_walking_distance(
+        self, identifier, source, target, metres, revision, both=False
+    ):
+        import math
+
+        from core.campus import building_position
+
+        if (
+            source == target
+            or building_position(source) is None
+            or building_position(target) is None
+        ):
+            raise ValueError(
+                "Choisir deux bâtiments distincts aux coordonnées connues."
+            )
+        if (
+            isinstance(metres, bool)
+            or not isinstance(metres, (int, float))
+            or not math.isfinite(metres)
+            or not 0 < metres <= 100_000
+        ):
+            raise ValueError(
+                "La distance doit être positive et inférieure ou égale à 100 km."
+            )
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row, data = self._read(db, identifier)
+            self._check_revision(row, revision)
+            known = {r.building for r in data.rooms.values()}
+            if source not in known or target not in known:
+                raise ValueError("Bâtiment absent de cet inventaire.")
+            value = {
+                "distance_m": float(metres),
+                "recorded_at": now(),
+                "source": "Distance de marche renseignée manuellement",
+            }
+            data.walking_routes[source, target] = value
+            if both:
+                data.walking_routes[target, source] = dict(value)
+            self._save(db, identifier, data)
+            self._event(
+                db,
+                identifier,
+                "Distance de marche renseignée",
+                "Saisie manuelle ; aucun appel Google API",
+                {"source": source, "target": target, "metres": metres, "both": both},
             )
 
     def configure_stock_capacity(self, identifier, room, capacity, revision):

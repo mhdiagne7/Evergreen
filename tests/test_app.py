@@ -152,3 +152,37 @@ def test_google_routes_are_links_without_api_fields(application):
     assert not app.exception
     assert not any("API" in item.label for item in app.text_input)
     assert any("Aucune clé API nécessaire" in item.value for item in app.caption)
+
+
+def test_block_planning_can_be_selected_and_requires_two_buildings(application):
+    app, _, _ = application
+    app.run()
+    app.radio(key="planning_mode").set_value("Regrouper par blocs proches").run()
+    assert not app.exception
+    app.multiselect(key="block_suggestions").set_value([]).run()
+    app.multiselect(key="block_manual").set_value(["CBY"]).run()
+    app.button(key="block_calculate").click().run()
+    assert not app.exception
+    assert any("Choisis un modèle" in error.value for error in app.error)
+
+
+def test_manual_walking_distance_requires_confirmation(application):
+    app, store, key = application
+    app.run()
+    app.selectbox(key="google_from").select("CBY").run()
+    app.selectbox(key="google_to").select("FTX").run()
+    app.number_input(key="walking_metres_CBY_FTX").set_value(800)
+    next(
+        button
+        for button in app.button
+        if button.label == "Enregistrer la distance de marche"
+    ).click().run()
+    assert not store.load(key)[0].walking_routes
+    app.checkbox(key="walking_confirm").check()
+    next(
+        button
+        for button in app.button
+        if button.label == "Enregistrer la distance de marche"
+    ).click().run()
+    assert not app.exception
+    assert store.load(key)[0].walking_routes["CBY", "FTX"]["distance_m"] == 800
