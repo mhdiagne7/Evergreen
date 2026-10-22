@@ -354,19 +354,18 @@ def test_groups_manual_preview_save_edit_and_plan_do_not_move_inventory(applicat
     assert store.load(workspace)[0] == before
 
 
-def test_groups_automatic_filter_preview_and_save(application):
-    from core.asset_groups import GroupStore
-
+def test_group_creation_is_simple_and_map_opens_in_dialog(application):
     app, store, workspace = application
     app.run().switch_page("ui/pages/regroup.py").run()
     app.button(key="ag_create").click().run()
-    app.radio(key="ag_mode").set_value("Automatique").run()
-    app.multiselect(key="ag_filter_building").set_value(["CBY"]).run()
-    app.number_input(key="ag_maximum").set_value(1).run()
-    app.button(key="ag_preview").click().run()
+    assert not app.radio
+    assert {m.label for m in app.multiselect} == {"Bâtiment", "Salle", "Modèle"}
+    labels = {c.label for c in app.checkbox}
+    assert "Uniquement les ordinateurs disponibles" not in labels
+    assert "Uniquement les postes installés en salle" not in labels
+    app.button(key="ag_open_map").click().run()
     assert not app.exception
-    app.button(key="ag_save").click().run()
+    assert app.selectbox(key="ag_picker_model")
+    app.button(key="ag_close_map").click().run()
     assert not app.exception
-    groups = GroupStore(store).groups(workspace)
-    assert len(groups) == 2
-    assert all(len(group["members"]) == 1 for group in groups)
+    assert app.text_input(key="ag_create_name").value == "Nouveau groupe"
