@@ -347,6 +347,7 @@ def test_groups_manual_preview_save_edit_and_plan_do_not_move_inventory(applicat
     assert store.load(workspace)[0] == before
     assert app.metric[0].value == "2"
     assert not app.radio
+    app.button(key="ag_open_swaps").click().run()
     for identifier in groups[0]["members"]:
         app.selectbox(key="ag_to_" + identifier).select(CENTRAL_STOCK).run()
     app.button(key="ag_individual_preview").click().run()
@@ -431,6 +432,7 @@ def test_group_individual_swap_preview_save_and_list(application):
         for a in groups.assets(workspace)
         if a["room"] == "FTX-147" and a["model"] == "Other"
     )
+    app.button(key="ag_open_swaps").click().run()
     app.selectbox(key="ag_to_" + asset).select("FTX-147").run()
     app.selectbox(key="ag_swap_" + asset).select(partner["id"]).run()
     before = store.load(workspace)[0]
@@ -450,3 +452,96 @@ def test_assistant_tab_is_not_in_sidebar(application):
     assert not any(
         "Assistant IA" in link.label for link in app.sidebar.get("page_link")
     )
+
+
+def test_group_room_options_follow_buildings_and_preview_counts_models(application):
+    app, _, _ = application
+    app.run().switch_page("ui/pages/regroup.py").run()
+    app.button(key="ag_create").click().run()
+    app.multiselect(key="ag_filter_room").set_value(["MRT-101"]).run()
+    app.session_state["ag_map_buildings"] = ["CBY"]
+    app.run()
+    assert set(app.multiselect(key="ag_filter_room").options) == {"CBY-101", "CBY-102"}
+    assert app.multiselect(key="ag_filter_room").value == []
+    app.button(key="ag_preview").click().run()
+    assert not app.exception
+    assert any(
+        metric.label == "Modèles différents" and metric.value == "1"
+        for metric in app.metric
+    )
+    distribution = next(
+        frame.value
+        for frame in app.dataframe
+        if "Nombre d’ordinateurs" in frame.value.columns
+    )
+    assert list(distribution.columns) == ["Modèle", "Nombre d’ordinateurs"]
+    assert distribution.iloc[0]["Nombre d’ordinateurs"] == 2
+
+
+def test_two_table_swap_dialog_queues_removes_and_saves_without_moving_inventory(
+    application,
+):
+    from core.asset_groups import GroupStore
+
+    _, store, workspace = application
+    groups = GroupStore(store)
+    assets = groups.assets(workspace)
+    source = next(a for a in assets if a["room"] == "CBY-101")
+    revision = store.load(workspace)[2]
+    identifier = groups.save_many(
+        workspace,
+        revision,
+        [{"name": "Mon groupe", "description": "", "members": [source["id"]]}],
+    )[0]
+    before = store.load(workspace)[0]
+    script = (
+        """
+import streamlit as st
+from types import SimpleNamespace
+from core.store import Store
+from core.asset_groups import GroupStore
+from ui.asset_groups import swaps_dialog
+store=Store(DB_PATH)
+groups=GroupStore(store)
+workspace=WORKSPACE
+original=st.dataframe
+def selectable(rows,*args,**kwargs):
+    key=kwargs.get('key','')
+    if key.startswith('ag_swap_left_') or key.startswith('ag_swap_right_'):
+        st.session_state['seen_left' if key.startswith('ag_swap_left_') else 'seen_right']=rows
+        return SimpleNamespace(selection=SimpleNamespace(rows=[0] if rows else []))
+    return original(rows,*args,**kwargs)
+st.dataframe=selectable
+group=next(g for g in groups.groups(workspace) if g['id']==GROUP_ID)
+if group['status']=='Brouillon':
+    assets=groups.assets(workspace)
+    members=[a for a in assets if a['id'] in group['members']]
+    data,_,revision,_=store.load(workspace)
+    swaps_dialog(groups,workspace,data,revision,assets,members,group)
+""".replace("DB_PATH", repr(str(store.path)))
+        .replace("WORKSPACE", repr(workspace))
+        .replace("GROUP_ID", repr(identifier))
+    )
+    app = AppTest.from_string(script).run()
+    assert not app.exception
+    assert len(app.session_state["seen_left"]) == 1
+    assert all(
+        row["Salle actuelle"] != "CBY-101" for row in app.session_state["seen_right"]
+    )
+    app.button(key="ag_swap_add").click().run()
+    assert not app.exception
+    assert len(app.session_state["ag_swap_queue"]["pairs"]) == 1
+    assert app.button(key="ag_swap_add").disabled
+    assert app.button(key="ag_swap_save").disabled
+    app.button(key="ag_swap_remove").click().run()
+    assert app.session_state["ag_swap_queue"]["pairs"] == []
+    app.button(key="ag_swap_add").click().run()
+    next(
+        box
+        for box in app.checkbox
+        if box.label == "Je confirme ces échanges à réaliser"
+    ).check().run()
+    app.button(key="ag_swap_save").click().run()
+    assert not app.exception
+    assert groups.groups(workspace)[0]["status"] == "Planifié"
+    assert store.load(workspace)[0] == before
