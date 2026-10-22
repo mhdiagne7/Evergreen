@@ -362,6 +362,108 @@ class GroupStore:
         self.store = store
         with store.connect() as db:
             db.executescript(SCHEMA)
+            columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(tracked_assets)")
+            }
+            if "hostname" not in columns:
+                db.execute(
+                    "ALTER TABLE tracked_assets ADD COLUMN hostname TEXT NOT NULL DEFAULT ''"
+                )
+            db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS asset_hostname ON tracked_assets(workspace, hostname COLLATE NOCASE) WHERE hostname != '' AND active=1"
+            )
+
+    def import_hostnames(self, workspace, content, prefer_unsuffixed=False):
+        """Associe uniquement les salles/modèles non ambigus, sans modifier les quantités."""
+        import csv
+        import io
+        from collections import defaultdict
+
+        reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
+        if reader.fieldnames != ["Hostname", "Model"]:
+            raise ValueError("Colonnes attendues : Hostname,Model.")
+        catalog = []
+        names = set()
+        for row in reader:
+            hostname, model = (
+                (row.get("Hostname") or "").strip(),
+                (row.get("Model") or "").strip(),
+            )
+            if (
+                not hostname
+                or not model
+                or None in row
+                or len(hostname) > 255
+                or len(model) > 160
+            ):
+                raise ValueError("Hostname ou modèle vide/invalide dans le CSV.")
+            if hostname.casefold() in names:
+                raise ValueError("Hostname en double dans le CSV : " + hostname)
+            names.add(hostname.casefold())
+            catalog.append((hostname, model))
+        if not catalog:
+            raise ValueError("Le CSV des hostnames est vide.")
+        with self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            _, data = self.store._read(db, workspace)
+            sync_assets(db, workspace, data)
+            buckets = defaultdict(list)
+            existing = set()
+            for row in db.execute(
+                "SELECT * FROM tracked_assets WHERE workspace=? AND active=1 ORDER BY id",
+                (workspace,),
+            ):
+                if row["hostname"]:
+                    existing.add(row["hostname"].casefold())
+                else:
+                    buckets[row["room"], row["model"]].append(row["id"])
+            assigned, unresolved = 0, []
+            for (room, model), ids in buckets.items():
+                if data.rooms[room].room_type != "classroom":
+                    continue
+                key = room.replace("-", "", 1).casefold()
+                candidates = [
+                    (h, m)
+                    for h, m in catalog
+                    if m == model
+                    and h.casefold() not in existing
+                    and (
+                        h.split("-", 1)[-1].casefold() == key
+                        or h.split("-", 1)[-1].casefold().startswith(key + "-")
+                    )
+                ]
+                exact = [
+                    (h, m)
+                    for h, m in candidates
+                    if h.split("-", 1)[-1].casefold() == key
+                ]
+                if prefer_unsuffixed and len(ids) == 1 and len(exact) == 1:
+                    candidates = exact
+                if len(candidates) != len(ids):
+                    unresolved.append(
+                        {
+                            "Salle": room,
+                            "Modèle": model,
+                            "Postes": len(ids),
+                            "Candidats": ", ".join(h for h, _ in candidates) or "Aucun",
+                        }
+                    )
+                    continue
+                for identifier, (hostname, _) in zip(ids, sorted(candidates)):
+                    db.execute(
+                        "UPDATE tracked_assets SET hostname=? WHERE id=? AND workspace=?",
+                        (hostname, identifier, workspace),
+                    )
+                    existing.add(hostname.casefold())
+                    assigned += 1
+            self.store._event(
+                db,
+                workspace,
+                "Hostnames associés",
+                "Quantités et emplacements inchangés",
+                {"assigned": assigned, "unresolved": unresolved},
+            )
+            return assigned, unresolved
 
     def assets(self, workspace):
         with self.store.connect() as db:
