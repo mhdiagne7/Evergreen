@@ -27,3 +27,11 @@ Créer, supprimer ou planifier un groupe ne déplace aucun poste. Annuler le res
 Groupes, caractéristiques et identifiants sont stockés dans la base SQLite existante, sans service externe ni nouvelle dépendance. Une sauvegarde complète SQLite conserve ces données ; un simple export du CSV agrégé ne les contient pas. Les corrections agrégées ou remises à zéro peuvent retirer des identifiants locaux : les groupes les conservent comme membres inactifs afin de signaler le changement.
 
 Les tests utilisent des inventaires temporaires synthétiques et couvrent les filtres, limites de taille, groupes persistants, conflits, indisponibilités, confirmations partielles, mouvements de matériel retourné et conservation des identifiants. Aucun jeu fictif n’est ajouté à l’inventaire réel.
+
+## Destinations individuelles et échanges
+
+Après création du groupe, **Une destination par ordinateur** permet de conserver chaque poste sur place, de le déplacer, ou de choisir un poste de la destination à ramener en échange. Les salles du même bâtiment apparaissent d’abord, puis les bâtiments par proximité géographique ; cette distance est à vol d’oiseau et ne mesure pas les couloirs.
+
+La liste récapitule les identifiants locaux (ou numéros réels renseignés), modèles, salles de départ et destinations, avec export CSV. **Vérifier les déplacements et échanges** contrôle les capacités, les modèles autorisés, la disponibilité et les doublons. Un échange entre deux salles pleines est une opération indivisible : les deux postes sont retirés puis réinstallés. Il ne passe pas par le stock central et doit être confirmé entièrement après réalisation physique.
+
+Un poste ne peut participer à deux opérations dans le même lot. Si deux postes du groupe s’échangent, configurer l’échange sur l’un et laisser l’autre sur sa salle actuelle dans le formulaire. Les déplacements simples sont validés dans l’ordre affiché. Préparer puis confirmer la liste pour enregistrer le lot ; ouvrir ensuite **Lots de déplacements** pour confirmer les opérations réellement effectuées. Le mode **Une destination pour tout le groupe** reste disponible.
