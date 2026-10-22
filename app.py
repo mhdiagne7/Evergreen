@@ -71,7 +71,6 @@ def main():
             "buildings",
             "computer_models",
             "regroup",
-            "assistant",
             "lots",
         ):
             st.page_link(PAGES[name], label=TITLES[name])

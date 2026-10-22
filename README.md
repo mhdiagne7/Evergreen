@@ -19,7 +19,6 @@ est un instantané explicite et ne se met pas à jour automatiquement.
 - **Accueil** : totaux du parc et carte interactive du campus.
 - **Modèles dans les salles** : liste des modèles installés, puis répartition par bâtiment et salles de classe, avec recherche et export. Le stock central est exclu de cette vue.
 La carte du campus se trouve directement sur **Accueil**.
-- **Assistant IA local** : question libre, vérification de la demande, calcul puis proposition.
 - **Bâtiments → bâtiment** : modèles présents, proportions et détail des salles.
 - **Regroupements** : créer et conserver des groupes, sélectionner plusieurs bâtiments dans une fenêtre de carte et confirmer, filtrer par salle ou modèle et préparer les déplacements. Voir [le fonctionnement des groupes](docs/GROUPES.md). Les outils de renouvellement et de regroupement par blocs restent accessibles dans cette page.
 - **Lots de déplacements → lot** : feuille de route, confirmation des opérations
