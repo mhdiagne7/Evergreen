@@ -291,3 +291,51 @@ def test_individual_swap_rejects_duplicate_partner_and_simple_full_destination(c
     with pytest.raises(ValueError, match="deux opérations"):
         groups.plan(w, group, 0, 0, assignments=assignments)
     assert not store.batches(w)
+
+
+def test_hostname_import_matches_room_model_and_preserves_counts_and_moves(campus):
+    store, w, groups = campus
+    before = store.load(w)[0]
+    assigned, pending = groups.import_hostnames(
+        w,
+        b"Hostname,Model\n4299-CBY101-1,X\n4299-CBY101-2,X\n4299-CBY102,Y\n4299-BRS1,X\n",
+    )
+    assert assigned == 4 and not pending
+    assert store.load(w)[0] == before
+    assets = groups.assets(w)
+    source = next(a for a in assets if a["hostname"] == "4299-CBY102")
+    target = next(a for a in assets if a["hostname"] == "4299-BRS1")
+    group = save_group(groups, w, [source["id"]])
+    batch = groups.plan(
+        w,
+        group,
+        0,
+        0,
+        assignments={
+            source["id"]: {"destination": target["room"], "swap": target["id"]}
+        },
+        save=True,
+    )
+    store.confirm_batch(w, batch, [0], "Échange réalisé")
+    moved = next(a for a in groups.assets(w) if a["id"] == source["id"])
+    assert moved["hostname"] == "4299-CBY102" and moved["room"] == "BRS-1"
+    from ui.asset_groups import asset_label, asset_rows
+
+    row = asset_rows([moved])[0]
+    assert row["Hostname"] == "4299-CBY102"
+    assert "Identifiant Evergreen" not in row and "Numéro d’inventaire réel" not in row
+    assert source["id"] not in asset_label(moved)
+
+
+def test_hostname_import_rejects_duplicate_and_skips_ambiguous_or_wrong_model(campus):
+    _, w, groups = campus
+    with pytest.raises(ValueError, match="double"):
+        groups.import_hostnames(w, b"Hostname,Model\n4299-CBY102,Y\n4299-cby102,Y\n")
+    count, pending = groups.import_hostnames(
+        w, b"Hostname,Model\n4299-CBY102,Y\n4299-CBY102-1,Y\n4299-BRS1,Z\n"
+    )
+    assert count == 0 and pending
+    count, pending = groups.import_hostnames(
+        w, b"Hostname,Model\n4299-CBY102,Y\n4299-CBY102-1,Y\n", prefer_unsuffixed=True
+    )
+    assert count == 1
