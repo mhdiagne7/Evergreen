@@ -1,8 +1,8 @@
 # Groupes d’ordinateurs
 
-Dans **Regroupements**, choisir **Nouveau groupe**. Le bouton principal **Sélectionner un bâtiment sur la carte** ouvre une grande fenêtre superposée. Cliquer sur un bâtiment revient au formulaire avec ses postes. Les filtres Bâtiment, Salle et Modèle permettent d’affiner la sélection ; cocher les ordinateurs à regrouper, nommer le groupe puis le prévisualiser avant enregistrement.
+Dans **Regroupements**, choisir **Nouveau groupe**. Le bouton **Sélectionner des bâtiments sur la carte** ouvre une grande fenêtre. Maintenir Ctrl (ou Cmd) pendant les clics pour sélectionner plusieurs bâtiments, puis cliquer sur **Confirmer les bâtiments**. Annuler conserve la sélection précédente. Effacer la sélection rétablit tous les bâtiments.
 
-Le formulaire affiche les postes actifs et disponibles installés en salle. Le mode automatique et les filtres catégorie, étage, état et priorité sont retirés de cette interface. Le moteur automatique reste disponible dans le code pour les usages existants, sans action automatique dans cette page.
+Les filtres Salle et Modèle sont facultatifs : sans sélection, tous les postes admissibles sont inclus. La liste est triée par modèle puis salle et tous les résultats sont cochés par défaut ; il reste possible d’en décocher avant de prévisualiser le groupe. Seuls les postes actifs, disponibles et installés en salle sont proposés. Les liens de renouvellement et le filtre Bâtiment ont été retirés de cette page.
 
 Chaque groupe conserve son nom, sa description, ses membres et leurs salles d’origine. Son détail affiche les emplacements actuels, une carte filtrée et un export. Les groupes peuvent être renommés, modifiés ou supprimés. Plusieurs groupes peuvent contenir le même poste : une alerte le signale, sans réservation de stock. Un groupe lié à un déplacement actif doit être annulé avant de modifier ses membres.
 
