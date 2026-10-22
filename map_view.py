@@ -114,7 +114,7 @@ def map_rows(data, models, selected_model=None):
     return rows, missing, colors
 
 
-def campus_map(data, models, key_prefix="map", group_highlight=False):
+def campus_map(data, models, key_prefix="map", group_highlight=False, multiple=False):
     st.subheader("Carte du parc informatique")
     options = ["Tous les modèles"] + list(models)
     selected = st.selectbox(
@@ -244,7 +244,7 @@ def campus_map(data, models, key_prefix="map", group_highlight=False):
         deck,
         height=510,
         on_select="rerun",
-        selection_mode="single-object",
+        selection_mode="multi-object" if multiple else "single-object",
         key=key_prefix
         + "_campus_map_"
         + str(st.session_state.get("active_context", "default")),
@@ -264,4 +264,6 @@ def campus_map(data, models, key_prefix="map", group_highlight=False):
     with st.expander("Légende des modèles"):
         st.markdown("".join(legend), unsafe_allow_html=True)
     objects = event.selection.objects.get("campus-buildings", [])
+    if multiple:
+        return sorted({item["code"] for item in objects})
     return objects[0]["code"] if objects else None
