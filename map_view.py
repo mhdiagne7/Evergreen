@@ -6,7 +6,7 @@ from html import escape
 import pydeck as pdk
 import streamlit as st
 
-from core.campus import MAP_SOURCE, building_distance, campus_catalog
+from core.campus import building_distance, campus_catalog
 
 PALETTE = [
     [37, 122, 86, 205],
@@ -252,15 +252,5 @@ def campus_map(data, models):
         )
     with st.expander("Légende des modèles"):
         st.markdown("".join(legend), unsafe_allow_html=True)
-    st.caption(
-        "Survole un bâtiment pour voir ses modèles et quantités ; clique pour son détail. "
-        "Sans filtre, la couleur indique le modèle dominant. En gris : aucun poste du modèle choisi. "
-        "Les bâtiments non recensés dans l’inventaire ne sont pas affichés."
-    )
-    st.caption(
-        f"[Contours et coordonnées : carte officielle uOttawa]({MAP_SOURCE}) · "
-        "Extraction du 15 octobre 2026. Fond CARTO / OpenStreetMap, connexion Internet requise. "
-        "LEE correspond à LEES-FHS, selon ta confirmation."
-    )
     objects = event.selection.objects.get("campus-buildings", [])
     return objects[0]["code"] if objects else None

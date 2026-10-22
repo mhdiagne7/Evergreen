@@ -16,7 +16,8 @@ est un instantané explicite et ne se met pas à jour automatiquement.
 
 ## Utiliser le dashboard
 
-- **Accueil** : totaux du parc, lots à suivre et informations à compléter.
+- **Accueil** : totaux du parc et carte interactive du campus.
+- **Modèles dans les salles** : liste des modèles installés, puis répartition par bâtiment et salles de classe, avec recherche et export. Le stock central est exclu de cette vue.
 - **Carte du campus** : juste après Accueil, bâtiments et modèles du parc importé.
 - **Assistant IA local** : question libre, vérification de la demande, calcul puis proposition.
 - **Bâtiments → bâtiment** : modèles présents, proportions et détail des salles.

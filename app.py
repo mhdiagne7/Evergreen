@@ -59,7 +59,6 @@ def main():
             st.session_state.pop("uniform_preview", None)
             st.session_state.pop("block_preview", None)
             st.session_state.active_context = context
-        st.caption(f"{label} · Version de l’inventaire : {revision}")
         if "notice" in st.session_state:
             st.success(st.session_state.pop("notice"))
 
@@ -70,7 +69,15 @@ def main():
     page = st.navigation(pages, position="hidden")
     with st.sidebar:
         st.caption("PILOTER")
-        for name in ("home", "map", "buildings", "regroup", "assistant", "lots"):
+        for name in (
+            "home",
+            "map",
+            "buildings",
+            "computer_models",
+            "regroup",
+            "assistant",
+            "lots",
+        ):
             st.page_link(PAGES[name], label=TITLES[name])
         st.caption("TENIR À JOUR")
         for name in ("stock", "models", "history", "data", "routes"):
