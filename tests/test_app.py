@@ -124,9 +124,9 @@ def test_import_diagnostics_are_collapsed_without_yellow_banner(application):
     app.run()
     assert not app.exception
     assert not app.warning
-    assert any(
-        expander.label == "Détails du contrôle de l’import" for expander in app.expander
-    )
+    assert not any("Contrôle conservé" in item.value for item in app.caption)
+    app.switch_page("ui/pages/data.py").run()
+    assert any("Contrôle conservé" in item.value for item in app.caption)
 
 
 def test_default_homogeneity_can_save_a_campus_cycle(tmp_path, monkeypatch):
@@ -157,7 +157,7 @@ def test_google_routes_are_links_without_api_fields(application):
     assert not app.exception
     assert not any("API" in item.label for item in app.text_input)
     app.switch_page("ui/pages/routes.py").run()
-    assert any("Aucune clé API nécessaire" in item.value for item in app.caption)
+    assert any("Google Maps" in item.value for item in app.caption)
 
 
 def test_block_planning_can_be_selected_and_requires_two_buildings(application):
@@ -172,27 +172,19 @@ def test_block_planning_can_be_selected_and_requires_two_buildings(application):
     assert any("Choisis un modèle" in error.value for error in app.error)
 
 
-def test_manual_walking_distance_requires_confirmation(application):
+def test_routes_only_shows_google_maps_building_selection(application):
     app, store, key = application
-    app.run()
-    app.switch_page("ui/pages/routes.py").run()
-    app.selectbox(key="google_from").select("CBY").run()
-    app.selectbox(key="google_to").select("FTX").run()
-    app.number_input(key="walking_metres_CBY_FTX").set_value(800)
-    next(
-        button
-        for button in app.button
-        if button.label == "Enregistrer la distance de marche"
-    ).click().run()
-    assert not store.load(key)[0].walking_routes
-    app.checkbox(key="walking_confirm").check()
-    next(
-        button
-        for button in app.button
-        if button.label == "Enregistrer la distance de marche"
-    ).click().run()
+    before = store.load(key)
+    app.run().switch_page("ui/pages/routes.py").run()
     assert not app.exception
-    assert store.load(key)[0].walking_routes["CBY", "FTX"]["distance_m"] == 800
+    assert {item.key for item in app.selectbox} == {"google_from", "google_to"}
+    assert not app.number_input
+    assert not any(
+        "déplacer ces ordinateurs" in heading.value for heading in app.subheader
+    )
+    assert not any("planification" in expander.label for expander in app.expander)
+    assert not app.dataframe
+    assert store.load(key) == before
 
 
 def test_every_page_and_building_navigation(application):
@@ -235,8 +227,8 @@ def test_backup_available_without_central_stock(application):
     app, store, _ = application
     key = store.create_workspace("Réseau importé sans stock MRT", routing_data())
     app.run()
-    app.selectbox(key="workspace").select(key).run()
     app.switch_page("ui/pages/data.py").run()
+    app.selectbox(key="workspace").select(key).run()
     app.button(key="prepare_backup").click().run()
     assert not app.exception
     assert app.session_state.backup_bytes.startswith(b"SQLite format 3")
@@ -301,4 +293,29 @@ def test_model_presence_navigation_filter_and_return(application):
     assert len(app.dataframe[-1].value) == 2
     app.text_input(key="presence_room_search").set_value("Absent").run()
     assert any("Aucune salle" in info.value for info in app.info)
+    assert not app.exception
+
+
+def test_sidebar_is_minimal_and_buildings_routes_button_navigates(application):
+    app, _, _ = application
+    app.run()
+    assert not app.sidebar.selectbox
+    assert not app.sidebar.expander
+    assert not any(
+        "Carte du campus" in link.label for link in app.sidebar.get("page_link")
+    )
+    app.switch_page("ui/pages/buildings.py").run()
+    app.button(key="buildings_routes").click().run()
+    app.switch_page("ui/pages/routes.py").run()
+    assert app.main.title[0].value == "Salles et trajets"
+
+
+def test_workspace_choice_survives_leaving_data_page(application):
+    app, store, first = application
+    store.create_workspace("Autre inventaire", import_owned_computers(OWNED))
+    app.run().switch_page("ui/pages/data.py").run()
+    app.selectbox(key="workspace").select(first).run()
+    app.switch_page("ui/pages/home.py").run()
+    app.switch_page("ui/pages/buildings.py").run()
+    assert app.session_state.workspace == first
     assert not app.exception
