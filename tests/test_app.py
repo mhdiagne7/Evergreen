@@ -240,3 +240,29 @@ def test_backup_available_without_central_stock(application):
     app.button(key="prepare_backup").click().run()
     assert not app.exception
     assert app.session_state.backup_bytes.startswith(b"SQLite format 3")
+
+
+def test_assistant_requires_review_and_never_updates_inventory(
+    application, monkeypatch
+):
+    from ui import assistant
+
+    app, store, key = application
+    monkeypatch.setattr(
+        assistant,
+        "interpret",
+        lambda *args: {"action": "inventaire", "buildings": ["CBY"], "model": ""},
+    )
+    before = store.load(key)
+    app.run().switch_page("ui/pages/assistant.py").run()
+    app.text_area[0].set_value("Quels modèles à CBY ?")
+    next(b for b in app.button if b.label == "Comprendre ma demande").click().run()
+    assert not app.exception
+    assert not app.dataframe
+    next(
+        b for b in app.button if b.label == "Calculer avec ces paramètres"
+    ).click().run()
+    assert app.dataframe
+    assert store.load(key) == before
+    app.text_area[0].set_value("Autre question").run()
+    assert not app.dataframe

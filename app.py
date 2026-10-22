@@ -70,7 +70,7 @@ def main():
     page = st.navigation(pages, position="hidden")
     with st.sidebar:
         st.caption("PILOTER")
-        for name in ("home", "buildings", "regroup", "lots"):
+        for name in ("home", "map", "buildings", "regroup", "assistant", "lots"):
             st.page_link(PAGES[name], label=TITLES[name])
         st.caption("TENIR À JOUR")
         for name in ("stock", "models", "history", "data", "routes"):

@@ -8,6 +8,8 @@ aucune réserve n'est créée dans les autres bâtiments.
 ## Utiliser le dashboard
 
 - **Accueil** : totaux du parc, lots à suivre et informations à compléter.
+- **Carte du campus** : juste après Accueil, bâtiments et modèles du parc importé.
+- **Assistant IA local** : question libre, vérification de la demande, calcul puis proposition.
 - **Bâtiments → bâtiment** : modèles présents, proportions et détail des salles.
 - **Regroupements → modèle dominant / blocs proches / renouvellement** : choisir
   un objectif, examiner la proposition puis enregistrer le lot.
@@ -17,7 +19,7 @@ aucune réserve n'est créée dans les autres bâtiments.
 - **Catalogue des modèles** : formats vérifiés et années de génération connues.
 - **Historique** : changements enregistrés. **Données et sauvegardes** : imports,
   capacité du stock, exports et sauvegarde SQLite.
-- **Salles et trajets** : carte, destinations compatibles et distances disponibles.
+- **Salles et trajets** : destinations compatibles et distances disponibles.
 
 Chaque rubrique a sa propre page. Le lien en haut permet de revenir au niveau
 parent ; le menu latéral reste accessible. Après un rechargement complet, une
@@ -25,16 +27,39 @@ page de détail sans sélection invite à reprendre la liste.
 
 ### Aide à la décision et IA
 
-L’assistant actuel est un moteur de règles vérifiables : modèle dominant,
-quantités, capacités, protection des générations connues et trajets. Il peut
-proposer des échanges et des blocs de bâtiments. Il ne comprend pas encore de
-questions en langage libre et ne garantit pas un optimum global.
+L’assistant local utilise **qwen3:4b avec Ollama** pour interpréter une question.
+Il propose une action et des paramètres : consulter l’inventaire, regrouper par
+modèle dominant ou préparer un bloc avec une cible explicite. L’utilisateur
+vérifie la demande comprise, puis Evergreen calcule les quantités et les étapes.
+Le modèle ne reçoit que la question et les noms de bâtiments/modèles ; il ne
+produit pas les chiffres affichés et ne modifie jamais directement les stocks.
+Un lot ne peut être enregistré que par un bouton explicite, puis confirmé dans
+le parcours habituel après réalisation physique.
 
-Un futur assistant conversationnel pourrait traduire une question en paramètres
-de ces mêmes fonctions, expliquer les résultats et présenter une proposition.
-Il ne devrait jamais modifier les stocks directement ni inventer des quantités.
-Le choix d’un modèle local ou d’un service externe et les données autorisées à lui
-être transmises restent à définir avant cette intégration.
+Les questions hors périmètre demandent une reformulation. Les égalités de
+modèles exigent un choix ; les générations plus récentes connues sont protégées.
+Cette version ne garantit pas le meilleur regroupement global, ne répond pas à
+toutes les questions libres et n’infère ni l’âge ni la puissance depuis un nom.
+Les résultats affichés deviennent indisponibles si la question, l’espace ou la
+version d’inventaire change. La conversation n’est pas conservée après fermeture.
+
+Installer [Ollama](https://ollama.com/download), puis télécharger une fois le
+[modèle local qwen3:4b](https://ollama.com/library/qwen3:4b), environ 2,5 Go :
+
+```sh
+ollama pull qwen3:4b
+```
+
+Démarrer le service avec `Lancer-IA-local.command` (Mac),
+`Lancer-IA-local.sh` (Linux) ou `Lancer-IA-local.bat` (Windows), puis l’application.
+Ces lanceurs désactivent les fonctionnalités cloud et limitent l’écoute à
+127.0.0.1:11434. Garder le terminal ouvert ; Ctrl+C arrête le service.
+Si Ollama fonctionne déjà, l’arrêter avant de lancer ce service local.
+L’application ne télécharge aucun modèle automatiquement et ne configure aucun
+fournisseur externe. Le téléchargement initial nécessite Internet.
+
+Références : [API locale](https://docs.ollama.com/api/chat) et
+[désactivation du cloud](https://docs.ollama.com/faq#how-do-i-disable-ollama-cloud-features).
 
 Pour rassembler un modèle ancien avant remplacement, choisir explicitement ce
 modèle comme cible dans le regroupement. Examiner les générations protégées et
@@ -63,6 +88,12 @@ Les lanceurs `Lancer-Evergreen.command`, `Lancer-Evergreen.sh` et
 
 Ouvrir http://127.0.0.1:8501 et garder le terminal ouvert. Ctrl+C arrête le
 serveur. Si un autre serveur utilise ce port, ajouter `--server.port 8502`.
+
+## Retrouver les données d’un autre ordinateur
+
+Suivre le [guide de récupération](docs/RECUPERER_INVENTAIRE.md). GitHub ne
+synchronise pas la base locale ni les CSV internes. Ne pas écraser une base
+existante avant d’avoir vérifié la sauvegarde récupérée.
 
 ## Importer l'inventaire réel
 

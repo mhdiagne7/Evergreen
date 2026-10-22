@@ -38,6 +38,9 @@ def render(name):
     if not identifier or identifier not in {w["id"] for w in store.list_workspaces()}:
         heading("Bienvenue dans Evergreen")
         st.info("Importe ton CSV pour commencer. Aucun inventaire fictif n’est chargé.")
+        st.caption(
+            "Si votre inventaire existe sur un autre ordinateur, récupérez sa sauvegarde ou les CSV d’origine. Aucun inventaire de remplacement ne sera créé."
+        )
         import_form(store)
         return
     data, models, revision, label = store.load(identifier)
@@ -236,11 +239,24 @@ def render(name):
         import_form(store)
         stock_view(*args, section="settings")
         backup_view(store, data)
-    elif name == "routes":
-        heading("Salles et trajets", "buildings")
+    elif name == "assistant":
+        heading("Assistant IA local", "home")
+        from ui.assistant import assistant_view
+
+        assistant_view(*args)
+    elif name == "map":
+        heading("Carte du campus", "home")
         from map_view import campus_map
 
-        campus_map(data, models)
+        selected = campus_map(data, models)
+        if selected in buildings:
+            if st.button("Voir les salles de " + selected):
+                go("building", selected_building=selected)
+        st.caption(
+            "Une seule réserve centrale à Morisset. Les autres bâtiments présentent les postes installés dans leurs salles."
+        )
+    elif name == "routes":
+        heading("Salles et trajets", "buildings")
         google_distances(data, store, identifier, revision)
         rooms = sorted(data.rooms)
         if rooms:

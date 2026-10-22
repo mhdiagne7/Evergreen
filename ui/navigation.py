@@ -4,6 +4,8 @@ import streamlit as st
 
 TITLES = {
     "home": "Accueil",
+    "map": "Carte du campus",
+    "assistant": "Assistant IA local",
     "buildings": "Bâtiments",
     "building": "Détail du bâtiment",
     "regroup": "Regroupements",
