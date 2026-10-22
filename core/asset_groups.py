@@ -365,6 +365,10 @@ class GroupStore:
             columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(tracked_assets)")
             }
+            if "motherboard_code" not in columns:
+                db.execute(
+                    "ALTER TABLE tracked_assets ADD COLUMN motherboard_code TEXT NOT NULL DEFAULT ''"
+                )
             if "hostname" not in columns:
                 db.execute(
                     "ALTER TABLE tracked_assets ADD COLUMN hostname TEXT NOT NULL DEFAULT ''"
@@ -372,6 +376,58 @@ class GroupStore:
             db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS asset_hostname ON tracked_assets(workspace, hostname COLLATE NOCASE) WHERE hostname != '' AND active=1"
             )
+
+    def import_motherboard_codes(self, workspace, content):
+        """Rapproche les postes existants par hostname/modèle, sans créer de poste."""
+        import csv
+        import io
+        import re
+
+        reader = csv.DictReader(
+            io.StringIO(content.decode("utf-8-sig")), skipinitialspace=True
+        )
+        if not reader.fieldnames or not {"Hostname", "Model", "Motherboard"}.issubset(
+            reader.fieldnames
+        ):
+            raise ValueError("Colonnes attendues : Hostname, Model et Motherboard.")
+        catalog = {}
+        for row in reader:
+            hostname = (row.get("Hostname") or "").strip().casefold()
+            model = (row.get("Model") or "").strip()
+            board = (row.get("Motherboard") or "").strip()
+            if not hostname or not model or None in row:
+                raise ValueError("Ligne CSV incomplète.")
+            if hostname in catalog:
+                raise ValueError("Hostname en double dans le CSV.")
+            # Un code constructeur peut être partagé : aucune contrainte d’unicité.
+            match = re.fullmatch(r"Dell Inc\.\s+([A-Za-z0-9-]+)", board)
+            catalog[hostname] = (model, match.group(1).upper() if match else board)
+        if not catalog:
+            raise ValueError("CSV vide.")
+        with self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            _, data = self.store._read(db, workspace)
+            sync_assets(db, workspace, data)
+            updated = 0
+            for asset in db.execute(
+                "SELECT * FROM tracked_assets WHERE workspace=? AND active=1",
+                (workspace,),
+            ).fetchall():
+                candidate = catalog.get(asset["hostname"].casefold())
+                if candidate and candidate[0] == asset["model"]:
+                    db.execute(
+                        "UPDATE tracked_assets SET motherboard_code=? WHERE id=?",
+                        (candidate[1], asset["id"]),
+                    )
+                    updated += 1
+            self.store._event(
+                db,
+                workspace,
+                "Références cartes mères importées",
+                "Aucun ordinateur ajouté ; hostnames conservés pour le rapprochement",
+                {"matched": updated},
+            )
+            return updated
 
     def consolidate_confirmed_lee_rooms(self, workspace):
         """Correction de libellés de salles, sans ajout ni déplacement physique."""
