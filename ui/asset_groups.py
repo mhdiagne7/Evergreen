@@ -10,9 +10,9 @@ from core.asset_groups import (
 )
 from core.export import csv_bytes
 from ui.common import operation_rows, refresh, table, transfer_rows
-from ui.navigation import PAGES, go
+from ui.navigation import go
 
-FIELDS = {"Bâtiment": "building", "Salle": "room", "Modèle": "model"}
+FIELDS = {"Salle": "room", "Modèle": "model"}
 
 
 def asset_label(asset):
@@ -58,15 +58,25 @@ def filters_view(assets, prefix):
     ]
 
 
-@st.dialog("Sélectionner un bâtiment sur la carte", width="large")
+@st.dialog("Sélectionner des bâtiments sur la carte", width="large")
 def building_map_dialog(data, models):
     from map_view import campus_map
 
-    selected = campus_map(data, models, key_prefix="ag_picker")
+    st.caption(
+        "Maintiens Ctrl (ou Cmd) en cliquant pour sélectionner plusieurs bâtiments, puis confirme."
+    )
+    selected = campus_map(data, models, key_prefix="ag_picker", multiple=True) or []
     if selected:
-        st.session_state.ag_map_building = selected
+        st.write("Sélection sur la carte : **" + ", ".join(selected) + "**")
+    if st.button(
+        "Confirmer les bâtiments",
+        type="primary",
+        key="ag_confirm_map",
+        disabled=not selected,
+    ):
+        st.session_state.ag_map_buildings = selected
         st.rerun()
-    if st.button("Fermer la carte", key="ag_close_map"):
+    if st.button("Annuler", key="ag_close_map"):
         st.rerun()
 
 
@@ -100,21 +110,22 @@ def selection_table(assets, key, default=()):
 def create_view(store, workspace, data, revision, groups_store, assets):
     with st.container(border=True):
         if st.button(
-            "Sélectionner un bâtiment sur la carte",
+            "Sélectionner des bâtiments sur la carte",
             type="primary",
             width="stretch",
             key="ag_open_map",
         ):
             building_map_dialog(data, sorted({a["model"] for a in assets}))
-        building = st.session_state.get("ag_map_building")
-        if building:
-            st.write("Bâtiment sélectionné : **" + building + "**")
+        buildings = st.session_state.get("ag_map_buildings", [])
+        if buildings:
+            st.write("Bâtiments sélectionnés : **" + ", ".join(buildings) + "**")
             if st.button("Effacer la sélection sur la carte", key="ag_clear_map"):
-                st.session_state.pop("ag_map_building", None)
+                st.session_state.pop("ag_map_buildings", None)
                 st.rerun()
         found = filters_view(assets, "ag_filter_")
-        if building:
-            found = [a for a in found if a["building"] == building]
+        if buildings:
+            found = [a for a in found if a["building"] in buildings]
+        found.sort(key=lambda a: (a["model"].casefold(), a["room"], a["id"]))
         st.caption(f"{len(found)} ordinateur(s) correspondent aux filtres.")
         chosen = []
         drafts = []
@@ -126,7 +137,7 @@ def create_view(store, workspace, data, revision, groups_store, assets):
         description = st.text_area("Description", key="ag_create_description")
         by_id = {a["id"]: a for a in assets}
         all_selected = st.checkbox(
-            "Sélectionner tous les résultats", key="ag_select_all"
+            "Sélectionner tous les résultats", value=True, key="ag_select_all"
         )
         chosen = selection_table(
             found,
@@ -424,7 +435,3 @@ def groups_view(store, workspace, data, models, revision):
         )
     else:
         st.info("Aucun groupe enregistré. Sélectionne des ordinateurs pour commencer.")
-    with st.expander("Renouvellement et uniformisation des modèles"):
-        st.page_link(PAGES["suggestions"], label="Regrouper par modèle dominant →")
-        st.page_link(PAGES["blocks"], label="Regrouper les blocs proches →")
-        st.page_link(PAGES["manual"], label="Renouveler un bâtiment →")
