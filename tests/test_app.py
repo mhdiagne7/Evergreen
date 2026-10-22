@@ -98,19 +98,21 @@ def test_new_database_has_no_demo(tmp_path, monkeypatch):
     assert any("Importe ton CSV" in item.value for item in app.info)
 
 
-def test_generation_year_can_be_saved_in_interface(application):
+def test_catalog_is_read_only_and_lists_only_present_models(application):
     app, store, key = application
-    app.run()
-    app.switch_page("ui/pages/models.py").run()
-    app.selectbox(key="model_to_date").select("New").run()
-    app.number_input(key="model_year_New").set_value(2025)
-    next(
-        button
-        for button in app.button
-        if button.label == "Enregistrer l’année du modèle"
-    ).click().run()
+    app.run().switch_page("ui/pages/models.py").run()
     assert not app.exception
-    assert store.load(key)[0].model_years["New"] == 2025
+    assert not app.selectbox
+    assert not app.number_input
+    assert not any(
+        "Confirmer le format" in e.label
+        or "Ajouter un modèle" in e.label
+        or "Années des modèles" in e.label
+        for e in app.expander
+    )
+    table = app.dataframe[0].value
+    assert set(table["Modèle"]) == {"Old", "Other", "New"}
+    assert sum(table["Postes"]) == 8
 
 
 def test_import_diagnostics_are_collapsed_without_yellow_banner(application):

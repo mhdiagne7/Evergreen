@@ -436,3 +436,32 @@ def test_service_tags_match_existing_hosts_only_and_survive_swap(campus):
         groups.import_service_tags(
             w, b"Hostname,Service Tag,Model\nH1,ABC1234,X\nH2,ABC1234,X\n"
         )
+
+
+def test_catalog_uses_only_inventory_hardware_and_preserves_variants(campus):
+    from core.model_catalog import inventory_catalog_rows
+
+    store, w, groups = campus
+    groups.import_hostnames(w, b"Hostname,Model\n4299-CBY101-1,X\n4299-CBY101-2,X\n")
+    payload = b"Hostname,Service Tag,Model,CPU,RAM Slots,Motherboard,Disks,Optical Drive\n4299-CBY101-1,TAG0001,X,CPU A,8GB,Board A,SSD A,None\n4299-CBY101-2,TAG0002,X,CPU B,16GB,Board B,SSD B,None\n4299-OUTSIDE,TAG0003,X,CPU OUTSIDE,99GB,Board Z,Disk Z,None\n"
+    groups.import_service_tags(w, payload)
+    before = store.load(w)
+    rows = inventory_catalog_rows(before[0], groups.assets(w))
+    row = next(row for row in rows if row["Modèle"] == "X")
+    assert row["Postes"] == 3 and row["Fiches techniques"] == 2
+    assert row["Processeurs observés"] == "CPU A | CPU B"
+    assert "OUTSIDE" not in str(rows) and "99GB" not in str(rows)
+    assert (
+        next(row for row in rows if row["Modèle"] == "Y")["Processeurs observés"]
+        == "Non renseigné"
+    )
+    groups.import_service_tags(
+        w, b"Hostname,Service Tag,Model\n4299-CBY101-1,TAG0001,X\n"
+    )
+    assert (
+        next(a for a in groups.assets(w) if a["service_tag"] == "TAG0001")[
+            "hardware_json"
+        ]
+        != "{}"
+    )
+    assert before == store.load(w)
