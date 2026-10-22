@@ -482,9 +482,7 @@ def groups_view(store, workspace, data, models, revision):
         selected = st.selectbox(
             "Groupes enregistrés",
             choices,
-            format_func=lambda item: (
-                by_id[item]["name"] + " · " + by_id[item]["status"]
-            ),
+            format_func=lambda item: by_id[item]["name"],
             key="ag_selected",
         )
         group_view(
