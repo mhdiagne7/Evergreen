@@ -9,20 +9,20 @@ from core.asset_groups import (
     filter_assets,
 )
 from core.export import csv_bytes
-from ui.common import operation_rows, refresh, table, transfer_rows
+from ui.common import refresh, table, transfer_rows
 from ui.navigation import go
 
 FIELDS = {"Salle": "room", "Modèle": "model"}
 
 
 def asset_label(asset):
-    return f"{asset.get('motherboard_code') or 'Référence non renseignée'} · {asset['room']} · {asset['model']}"
+    return f"{asset.get('service_tag') or 'Service Tag non renseigné'} · {asset['room']} · {asset['model']}"
 
 
 def asset_rows(assets, origins=None):
     return [
         {
-            "Référence carte mère": a.get("motherboard_code") or "Non renseignée",
+            "Service Tag": a.get("service_tag") or "Non renseigné",
             "Modèle": a["model"],
             "Bâtiment": a["building"],
             "Salle actuelle": a["room"],
@@ -84,7 +84,7 @@ def selection_table(assets, key, default=()):
         {
             "Choisir": a["id"] in default,
             "ID": a["id"],
-            "Référence carte mère": a.get("motherboard_code") or "Non renseignée",
+            "Service Tag": a.get("service_tag") or "Non renseigné",
             "Salle": a["room"],
             "Modèle": a["model"],
         }
@@ -210,7 +210,7 @@ def individual_moves_view(
                 + "** · "
                 + asset["room"]
                 + " · "
-                + (asset.get("motherboard_code") or "Référence non renseignée")
+                + (asset.get("service_tag") or "Service Tag non renseigné")
             )
             origin = data.rooms[asset["room"]].building
 
@@ -458,97 +458,9 @@ def group_view(store, workspace, data, revision, groups_store, assets, group):
             store.cancel_batch(workspace, group["batch_id"])
             refresh("Lot annulé. Les opérations déjà confirmées sont conservées.")
         return
-    mode = st.radio(
-        "Organisation des déplacements",
-        ["Une destination par ordinateur", "Une destination pour tout le groupe"],
-        key="ag_move_mode",
-        horizontal=True,
+    individual_moves_view(
+        groups_store, workspace, data, revision, assets, members, group
     )
-    if mode == "Une destination par ordinateur":
-        individual_moves_view(
-            groups_store, workspace, data, revision, assets, members, group
-        )
-        return
-    destination = st.selectbox(
-        "Salle de destination", sorted(data.rooms), key="ag_destination_" + group["id"]
-    )
-    info = data.rooms[destination]
-    st.caption(
-        "Places libres : "
-        + (
-            str(int(data.available(destination)))
-            if info.capacity is not None
-            else "capacité non configurée, à vérifier avant intervention"
-        )
-    )
-    with st.expander("Renseigner la capacité réelle de la destination"):
-        st.caption(
-            "Les capacités issues du CSV sont les postes observés, pas une mesure des places physiques. Vérifie la salle avant de déclarer une autre capacité."
-        )
-        capacity = int(
-            st.number_input(
-                "Capacité totale vérifiée de la salle",
-                min_value=data.occupied(destination),
-                value=max(data.occupied(destination), info.capacity or 0),
-                step=1,
-                key="ag_capacity_" + destination,
-            )
-        )
-        checked = st.checkbox(
-            "J’ai vérifié cette capacité sur le terrain",
-            key="ag_capacity_checked_" + destination,
-        )
-        if st.button(
-            "Enregistrer la capacité de destination",
-            disabled=not checked,
-            key="ag_save_capacity_" + group["id"],
-        ):
-            try:
-                groups_store.room_capacity(workspace, destination, revision, capacity)
-                refresh("Capacité déclarée enregistrée. Recalcule le déplacement.")
-            except ValueError as error:
-                st.error(str(error))
-    signature = (workspace, revision, group["id"], group["version"], destination)
-    if st.button("Prévisualiser le déplacement", key="ag_plan_" + group["id"]):
-        try:
-            plan = groups_store.plan(
-                workspace, group["id"], group["version"], revision, destination
-            )
-            st.session_state.ag_move_preview = (signature, plan)
-        except ValueError as error:
-            st.error(str(error))
-    preview = st.session_state.get("ag_move_preview")
-    if preview and preview[0] == signature:
-        plan = preview[1]
-        table(operation_rows(plan))
-        table(transfer_rows(plan, data))
-        st.caption(
-            "Les ordinateurs déjà à destination restent en place. L’ordre regroupe les salles d’origine ; aucune tournée piétonne optimale n’est garantie."
-        )
-        confirmed = st.checkbox(
-            "Je confirme cette planification ; les ordinateurs seront déplacés plus tard",
-            key="ag_plan_confirm_" + group["id"],
-        )
-        if st.button(
-            "Enregistrer le lot de déplacement",
-            disabled=not confirmed,
-            key="ag_plan_save_" + group["id"],
-        ):
-            try:
-                groups_store.plan(
-                    workspace,
-                    group["id"],
-                    group["version"],
-                    revision,
-                    destination,
-                    save=True,
-                )
-                st.session_state.pop("ag_move_preview", None)
-                refresh(
-                    "Lot planifié. L’inventaire est inchangé jusqu’à la confirmation physique."
-                )
-            except ValueError as error:
-                st.error(str(error))
 
 
 def groups_view(store, workspace, data, models, revision):
