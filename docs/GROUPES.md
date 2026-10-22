@@ -34,7 +34,7 @@ Après création du groupe, **Une destination par ordinateur** permet de conserv
 
 La liste récapitule les hostnames, modèles, salles de départ et destinations, avec export CSV. **Vérifier les déplacements et échanges** contrôle les capacités, les modèles autorisés, la disponibilité et les doublons. Un échange entre deux salles pleines est une opération indivisible : les deux postes sont retirés puis réinstallés. Il ne passe pas par le stock central et doit être confirmé entièrement après réalisation physique.
 
-Un poste ne peut participer à deux opérations dans le même lot. Si deux postes du groupe s’échangent, configurer l’échange sur l’un et laisser l’autre sur sa salle actuelle dans le formulaire. Les déplacements simples sont validés dans l’ordre affiché. Préparer puis confirmer la liste pour enregistrer le lot ; ouvrir ensuite **Lots de déplacements** pour confirmer les opérations réellement effectuées. Le mode **Une destination pour tout le groupe** reste disponible.
+Un poste ne peut participer à deux opérations dans le même lot. Si deux postes du groupe s’échangent, configurer l’échange sur l’un et laisser l’autre sur sa salle actuelle dans le formulaire. Les déplacements simples sont validés dans l’ordre affiché. Préparer puis confirmer la liste pour enregistrer le lot ; ouvrir ensuite **Lots de déplacements** pour confirmer les opérations réellement effectuées. Seules les destinations individuelles sont proposées dans le détail du groupe.
 
 ## Hostnames
 
@@ -49,3 +49,9 @@ Les suffixes `-1` à `-4` de LEE-105, LEE-107 et LEE-109 identifient des postes 
 ## Affichage des références de carte mère
 
 Le CSV technique `Hostname, Model, …, Motherboard, …` est rapproché uniquement des ordinateurs actifs existants, par hostname et modèle exact. L’affichage utilise maintenant **Référence carte mère**, par exemple `0YGWFV`, à la place du hostname. Ces références sont partagées entre plusieurs ordinateurs : elles ne sont pas présentées comme des Service Tags uniques. Les clés internes et les hostnames restent conservés pour suivre et rapprocher les postes. Aucun ordinateur du fichier technique n’est ajouté automatiquement. Les codes non associés restent non renseignés.
+
+## Service Tags réels
+
+L’affichage des groupes, de la sélection des postes et des échanges utilise désormais le **Service Tag** réel fourni par le CSV système. Les références de carte mère ne servent plus d’identifiant affiché. Le rapprochement exige un hostname et un modèle correspondant à un poste actif déjà inventorié ; il n’ajoute aucun ordinateur. Les tags sont uniques dans chaque inventaire, et les doublons du CSV ou conflits d’affectation sont refusés dans une transaction. Les tags absents restent non renseignés. Hostnames, références de carte mère et clés internes sont conservés dans la base, sans être affichés comme Service Tags. Une sauvegarde SQLite conserve ces données.
+
+L’onglet Assistant IA est retiré de la navigation. Dans les regroupements, chaque ordinateur a sa propre destination ; le choix d’une destination commune est retiré.
