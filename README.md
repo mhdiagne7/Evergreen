@@ -5,6 +5,15 @@ préparer les renouvellements et enregistrer les déplacements réalisés.
 Le dashboard propose une page par tâche, avec une navigation latérale et des liens de retour. Le **stock central est à MRT** :
 aucune réserve n'est créée dans les autres bâtiments.
 
+
+## Données pour les autres ordinateurs
+
+Une [archive complète des données et ses instructions de restauration](transfert/README.md)
+est publiée dans ce dépôt public à la demande du propriétaire. Elle permet de
+retrouver l’inventaire corrigé et ses réglages sur un autre ordinateur. Les
+fichiers de travail de `private/` restent ignorés par Git ; l’archive publiée
+est un instantané explicite et ne se met pas à jour automatiquement.
+
 ## Utiliser le dashboard
 
 - **Accueil** : totaux du parc, lots à suivre et informations à compléter.
