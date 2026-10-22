@@ -18,7 +18,7 @@ est un instantané explicite et ne se met pas à jour automatiquement.
 
 - **Accueil** : totaux du parc et carte interactive du campus.
 - **Modèles dans les salles** : liste des modèles installés, puis répartition par bâtiment et salles de classe, avec recherche et export. Le stock central est exclu de cette vue.
-- **Carte du campus** : juste après Accueil, bâtiments et modèles du parc importé.
+La carte du campus se trouve directement sur **Accueil**.
 - **Assistant IA local** : question libre, vérification de la demande, calcul puis proposition.
 - **Bâtiments → bâtiment** : modèles présents, proportions et détail des salles.
 - **Regroupements → modèle dominant / blocs proches / renouvellement** : choisir
@@ -187,13 +187,10 @@ manuels de renouvellement restent accessibles dans l'autre mode.
 Dans **Salles et trajets**, sélectionner le départ et l’arrivée puis ouvrir
 le lien Google Maps. La distance et la durée se consultent directement dans
 Google Maps, sans clé API ni facturation configurée dans Evergreen.
-Pour utiliser la distance consultée dans un plan, ouvrir **Utiliser une distance
-de marche dans la planification**, saisir les mètres et confirmer la vérification.
-La valeur est conservée localement, datée et appliquée uniquement au sens renseigné.
-Le retour est ajouté seulement si son égalité a été vérifiée explicitement.
-Chaque étape indique la source de sa distance et fournit le lien Google Maps.
-Sans distance renseignée, le calcul utilise Haversine et affiche **à vol d’oiseau**.
-Aucun navigateur robotisé ni appel Google Maps API ne récupère les valeurs.
+Cette page présente uniquement le choix des bâtiments et le lien piéton Google Maps.
+Les distances de marche déjà enregistrées restent conservées dans la base.
+Les paramètres d’inventaire et contrôles d’import se trouvent dans
+**Données et sauvegardes → Inventaire et informations de planification**.
 
 ### Géographie du campus
 

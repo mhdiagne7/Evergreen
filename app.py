@@ -29,17 +29,12 @@ def main():
         st.error(f"Impossible de charger l’inventaire local : {error}")
     workspaces = store.list_workspaces()
     ids = [w["id"] for w in workspaces]
-    labels = {w["id"]: w["name"] for w in workspaces}
+    if ids:
+        requested = st.session_state.get("workspace", st.query_params.get("workspace"))
+        # Garder le choix d’inventaire même quand son widget n’est pas affiché.
+        st.session_state.workspace = requested if requested in ids else ids[-1]
     with st.sidebar:
         st.title("Evergreen")
-        st.caption("Organiser le parc. Suivre les interventions.")
-        if ids:
-            if st.session_state.get("workspace") not in ids:
-                requested = st.query_params.get("workspace")
-                st.session_state.workspace = requested if requested in ids else ids[-1]
-            st.selectbox(
-                "Inventaire actif", ids, format_func=labels.get, key="workspace"
-            )
         st.divider()
     identifier = st.session_state.get("workspace") if ids else None
     if identifier:
@@ -71,7 +66,6 @@ def main():
         st.caption("PILOTER")
         for name in (
             "home",
-            "map",
             "buildings",
             "computer_models",
             "regroup",
@@ -82,26 +76,6 @@ def main():
         st.caption("TENIR À JOUR")
         for name in ("stock", "models", "history", "data", "routes"):
             st.page_link(PAGES[name], label=TITLES[name])
-        st.divider()
-        st.caption(
-            "Données enregistrées sur cet ordinateur. Aucun envoi automatique vers GitHub."
-        )
-    if identifier:
-        with st.sidebar:
-            if data.import_notes:
-                with st.expander("Détails du contrôle de l’import"):
-                    for note in data.import_notes:
-                        st.caption(note)
-            if data.distance_mode == "geodesic":
-                st.caption(
-                    "Stock central à Morisset · Préparation des interventions Evergreen"
-                )
-                with st.expander("Repères de planification et distances"):
-                    st.caption(
-                        "Stock central à Morisset · Distances de marche renseignées quand disponibles, sinon à vol d’oiseau, "
-                        "sans estimation des déplacements intérieurs. "
-                        "Les capacités des salles sont limitées aux postes recensés à l’import."
-                    )
     page.run()
 
 
