@@ -7,12 +7,9 @@ import streamlit as st
 
 from core.buildings import building_summary
 from core.export import csv_bytes
-from core.graph import build_graph
 from core.homogeneity import building_models, dominant_models
-from core.routing import shortest_route
 from core.store import DEFAULT_DB, Store
 from map_view import campus_map
-from room_views import recommendations, show_route
 from ui.batches import batches_view
 from ui.block_planning import block_planning
 from ui.common import table
@@ -81,6 +78,15 @@ def render(name):
         model_presence_detail(data)
     elif name == "buildings":
         heading("Bâtiments", "home")
+        with st.container(border=True):
+            st.subheader("Trajets entre bâtiments")
+            if st.button(
+                "Consulter les trajets et la carte →",
+                key="buildings_routes",
+                type="primary",
+                width="stretch",
+            ):
+                go("routes")
         query = st.text_input("Rechercher un bâtiment", placeholder="Code du bâtiment")
         matches = [
             building
@@ -117,7 +123,7 @@ def render(name):
                 "evergreen-batiments.csv",
                 "text/csv",
             )
-        st.page_link(PAGES["routes"], label="Consulter les trajets et la carte →")
+
     elif name == "building":
         selected = st.session_state.get("selected_building")
         if selected not in buildings:
@@ -217,6 +223,27 @@ def render(name):
             )
     elif name == "data":
         heading("Données et sauvegardes", "home")
+        spaces = store.list_workspaces()
+        labels = {space["id"]: space["name"] for space in spaces}
+        with st.expander("Inventaire et informations de planification"):
+            st.selectbox(
+                "Inventaire actif",
+                list(labels),
+                format_func=labels.get,
+                key="workspace",
+            )
+            st.caption(
+                "Données enregistrées sur cet ordinateur. Aucun envoi automatique vers GitHub."
+            )
+            if data.import_notes:
+                st.markdown("**Détails du contrôle de l’import**")
+                for note in data.import_notes:
+                    st.caption(note)
+            if data.distance_mode == "geodesic":
+                st.markdown("**Repères de planification et distances**")
+                st.caption(
+                    "Stock central à Morisset. Les distances de marche renseignées sont utilisées quand disponibles, sinon les distances à vol d’oiseau. Les déplacements intérieurs ne sont pas évalués. Les capacités de travail des salles correspondent aux postes recensés à l’import."
+                )
         st.write(
             "Un import crée un espace indépendant. Les réceptions et les lots mettent à jour l’espace actif sans remplacer son référentiel de salles."
         )
@@ -229,23 +256,7 @@ def render(name):
 
         assistant_view(*args)
     elif name == "map":
-        heading("Carte du campus", "home")
-        selected = campus_map(data, models)
-        if selected in buildings:
-            if st.button("Voir les salles de " + selected):
-                go("building", selected_building=selected)
+        go("home")
     elif name == "routes":
         heading("Salles et trajets", "buildings")
-        google_distances(data, store, identifier, revision)
-        rooms = sorted(data.rooms)
-        if rooms:
-            graph = build_graph(data)
-            recommendations(data, graph, rooms, label)
-            source = st.selectbox("Départ du trajet", rooms, key="choice_route_source")
-            target = st.selectbox(
-                "Arrivée du trajet",
-                rooms,
-                index=min(1, len(rooms) - 1),
-                key="choice_route_destination",
-            )
-            show_route(shortest_route(graph, source, target))
+        google_distances(data)
