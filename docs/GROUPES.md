@@ -45,3 +45,7 @@ Les tableaux et choix d’ordinateurs affichent le **Hostname** plutôt que la c
 ## Salles LEE confirmées
 
 Les suffixes `-1` à `-4` de LEE-105, LEE-107 et LEE-109 identifient des postes supplémentaires dans la même salle. Le hostname sans suffixe est celui du poste principal. Ces entrées sont regroupées dans la salle de base à l’import ; les anciens inventaires locaux sont corrigés sans ajouter de doublons, sans changer les identifiants internes ni le total des ordinateurs. Les capacités de travail sont fondées sur les postes observés après regroupement, sans prétendre mesurer les places physiques. Les préparations antérieures deviennent périmées et doivent être recalculées. Les autres suffixes de salle ne sont pas interprétés automatiquement.
+
+## Affichage des références de carte mère
+
+Le CSV technique `Hostname, Model, …, Motherboard, …` est rapproché uniquement des ordinateurs actifs existants, par hostname et modèle exact. L’affichage utilise maintenant **Référence carte mère**, par exemple `0YGWFV`, à la place du hostname. Ces références sont partagées entre plusieurs ordinateurs : elles ne sont pas présentées comme des Service Tags uniques. Les clés internes et les hostnames restent conservés pour suivre et rapprocher les postes. Aucun ordinateur du fichier technique n’est ajouté automatiquement. Les codes non associés restent non renseignés.
