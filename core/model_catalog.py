@@ -61,3 +61,29 @@ def model_rows(models, data):
             row["Modèle"],
         ),
     )
+
+
+def inventory_catalog_rows(data, assets):
+    """Caractéristiques observées des seuls postes actifs inventoriés, sans extrapolation."""
+    names = sorted(
+        {model for (_, model), quantity in data.inventory.items() if quantity > 0}
+    )
+    rows = model_rows(names, data)
+    for row in rows:
+        model = row["Modèle"]
+        units = [
+            asset for asset in assets if asset["active"] and asset["model"] == model
+        ]
+        specs = [json.loads(asset.get("hardware_json") or "{}") for asset in units]
+        row["Postes"] = sum(q for (_, m), q in data.inventory.items() if m == model)
+        row["Fiches techniques"] = sum(bool(spec) for spec in specs)
+        for label, field in [
+            ("Processeurs observés", "CPU"),
+            ("RAM observée", "RAM Slots"),
+            ("Stockage observé", "Disks"),
+            ("Cartes mères observées", "Motherboard"),
+            ("Lecteurs optiques observés", "Optical Drive"),
+        ]:
+            values = sorted({spec.get(field, "") for spec in specs} - {""})
+            row[label] = " | ".join(values) if values else "Non renseigné"
+    return rows

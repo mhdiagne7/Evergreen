@@ -365,6 +365,10 @@ class GroupStore:
             columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(tracked_assets)")
             }
+            if "hardware_json" not in columns:
+                db.execute(
+                    "ALTER TABLE tracked_assets ADD COLUMN hardware_json TEXT NOT NULL DEFAULT '{}'"
+                )
             if "service_tag" not in columns:
                 db.execute(
                     "ALTER TABLE tracked_assets ADD COLUMN service_tag TEXT NOT NULL DEFAULT ''"
@@ -411,7 +415,16 @@ class GroupStore:
                 raise ValueError("Hostname, modèle ou Service Tag manquant/invalide.")
             if hostname in catalog or tag in tags:
                 raise ValueError("Hostname ou Service Tag en double dans le CSV.")
-            catalog[hostname] = (model, tag)
+            fields = ("CPU", "RAM Slots", "Motherboard", "Disks", "Optical Drive")
+            hardware = (
+                json.dumps(
+                    {field: (row.get(field) or "").strip() for field in fields},
+                    ensure_ascii=False,
+                )
+                if any(field in reader.fieldnames for field in fields)
+                else None
+            )
+            catalog[hostname] = (model, tag, hardware)
             tags.add(tag)
         if not catalog:
             raise ValueError("CSV vide.")
@@ -435,8 +448,8 @@ class GroupStore:
                             "Un Service Tag est déjà attribué à un autre poste."
                         )
                     db.execute(
-                        "UPDATE tracked_assets SET service_tag=? WHERE id=?",
-                        (candidate[1], asset["id"]),
+                        "UPDATE tracked_assets SET service_tag=?,hardware_json=COALESCE(?,hardware_json) WHERE id=?",
+                        (candidate[1], candidate[2], asset["id"]),
                     )
                     updated += 1
             self.store._event(
