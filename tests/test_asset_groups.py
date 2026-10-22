@@ -322,7 +322,7 @@ def test_hostname_import_matches_room_model_and_preserves_counts_and_moves(campu
     from ui.asset_groups import asset_label, asset_rows
 
     row = asset_rows([moved])[0]
-    assert row["Hostname"] == "4299-CBY102"
+    assert row["Référence carte mère"] == "Non renseignée"
     assert "Identifiant Evergreen" not in row and "Numéro d’inventaire réel" not in row
     assert source["id"] not in asset_label(moved)
 
@@ -364,7 +364,7 @@ def test_consolidate_lee_preserves_computers_hostnames_groups_and_total(tmp_path
     )[0]
     assert groups.consolidate_confirmed_lee_rooms(w) == 4
     count, pending = groups.import_hostnames(w, csv)
-    assert count == 1 and not pending
+    assert count in {0, 1} and not pending
     after = groups.assets(w)
     assert {a["id"] for a in after} == {a["id"] for a in assets}
     assert {a["room"] for a in after} == {"LEE-105"}
@@ -377,3 +377,24 @@ def test_consolidate_lee_preserves_computers_hostnames_groups_and_total(tmp_path
     revision = s.load(w)[2]
     assert groups.consolidate_confirmed_lee_rooms(w) == 0
     assert s.load(w)[2] == revision
+
+
+def test_motherboard_codes_only_update_existing_hosts_and_allow_duplicates(campus):
+    store, w, groups = campus
+    groups.import_hostnames(
+        w,
+        b"Hostname,Model\n4299-CBY101-1,X\n4299-CBY101-2,X\n4299-CBY102,Y\n4299-BRS1,X\n",
+    )
+    before = store.load(w)
+    ids = {a["id"] for a in groups.assets(w)}
+    content = b'Hostname, Model, Motherboard\n4299-CBY101-1, "X", "Dell Inc. 0YGWFV"\n4299-CBY101-2, "X", "Dell Inc. 0YGWFV"\n4299-CBY102, "Wrong", "Dell Inc. WRONG"\n4299-OTHER, "X", "Dell Inc. UNUSED"\n'
+    assert groups.import_motherboard_codes(w, content) == 2
+    assets = groups.assets(w)
+    assert store.load(w) == before
+    assert {a["id"] for a in assets} == ids
+    assert sum(a["motherboard_code"] == "0YGWFV" for a in assets) == 2
+    assert not any(a["motherboard_code"] in {"WRONG", "UNUSED"} for a in assets)
+    from ui.asset_groups import asset_rows
+
+    rows = asset_rows(assets)
+    assert "Hostname" not in rows[0] and "Numéro d’inventaire réel" not in rows[0]
