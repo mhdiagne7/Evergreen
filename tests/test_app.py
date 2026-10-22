@@ -344,13 +344,14 @@ def test_groups_manual_preview_save_edit_and_plan_do_not_move_inventory(applicat
     assert len(groups) == 1 and len(groups[0]["members"]) == 2
     assert store.load(workspace)[0] == before
     assert app.metric[0].value == "2"
-    app.radio(key="ag_move_mode").set_value("Une destination pour tout le groupe").run()
-    app.selectbox(key="ag_destination_" + groups[0]["id"]).select(CENTRAL_STOCK).run()
-    app.button(key="ag_plan_" + groups[0]["id"]).click().run()
+    assert not app.radio
+    for identifier in groups[0]["members"]:
+        app.selectbox(key="ag_to_" + identifier).select(CENTRAL_STOCK).run()
+    app.button(key="ag_individual_preview").click().run()
     assert not app.exception
-    assert app.button(key="ag_plan_save_" + groups[0]["id"]).disabled
-    app.checkbox(key="ag_plan_confirm_" + groups[0]["id"]).check().run()
-    app.button(key="ag_plan_save_" + groups[0]["id"]).click().run()
+    assert app.button(key="ag_individual_save").disabled
+    app.checkbox(key="ag_individual_confirm").check().run()
+    app.button(key="ag_individual_save").click().run()
     assert not app.exception
     assert GroupStore(store).groups(workspace)[0]["status"] == "Planifié"
     assert store.load(workspace)[0] == before
@@ -439,3 +440,11 @@ def test_group_individual_swap_preview_save_and_list(application):
     assert not app.exception
     assert groups.groups(workspace)[0]["status"] == "Planifié"
     assert store.load(workspace)[0] == before
+
+
+def test_assistant_tab_is_not_in_sidebar(application):
+    app, _, _ = application
+    app.run()
+    assert not any(
+        "Assistant IA" in link.label for link in app.sidebar.get("page_link")
+    )

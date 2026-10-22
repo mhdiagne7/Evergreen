@@ -322,7 +322,7 @@ def test_hostname_import_matches_room_model_and_preserves_counts_and_moves(campu
     from ui.asset_groups import asset_label, asset_rows
 
     row = asset_rows([moved])[0]
-    assert row["Référence carte mère"] == "Non renseignée"
+    assert row["Service Tag"] == "Non renseigné"
     assert "Identifiant Evergreen" not in row and "Numéro d’inventaire réel" not in row
     assert source["id"] not in asset_label(moved)
 
@@ -398,3 +398,41 @@ def test_motherboard_codes_only_update_existing_hosts_and_allow_duplicates(campu
 
     rows = asset_rows(assets)
     assert "Hostname" not in rows[0] and "Numéro d’inventaire réel" not in rows[0]
+
+
+def test_service_tags_match_existing_hosts_only_and_survive_swap(campus):
+    store, w, groups = campus
+    groups.import_hostnames(
+        w,
+        b"Hostname,Model\n4299-CBY101-1,X\n4299-CBY101-2,X\n4299-CBY102,Y\n4299-BRS1,X\n",
+    )
+    before = store.load(w)
+    payload = b'Hostname, Service Tag, Model\n4299-CBY102, "ABC1234", "Y"\n4299-BRS1, "DEF5678", "X"\n4299-OUTSIDE, "OUT1234", "X"\n'
+    assert groups.import_service_tags(w, payload) == 2
+    assert store.load(w) == before
+    assets = groups.assets(w)
+    first = next(a for a in assets if a["service_tag"] == "ABC1234")
+    second = next(a for a in assets if a["service_tag"] == "DEF5678")
+    group = save_group(groups, w, [first["id"]])
+    batch = groups.plan(
+        w,
+        group,
+        0,
+        0,
+        assignments={
+            first["id"]: {"destination": second["room"], "swap": second["id"]}
+        },
+        save=True,
+    )
+    store.confirm_batch(w, batch, [0], "Échange réalisé")
+    moved = next(a for a in groups.assets(w) if a["id"] == first["id"])
+    assert moved["service_tag"] == "ABC1234" and moved["room"] == second["room"]
+    from ui.asset_groups import asset_label, asset_rows
+
+    assert "ABC1234" in asset_label(moved)
+    row = asset_rows([moved])[0]
+    assert row["Service Tag"] == "ABC1234" and "Référence carte mère" not in row
+    with pytest.raises(ValueError, match="double"):
+        groups.import_service_tags(
+            w, b"Hostname,Service Tag,Model\nH1,ABC1234,X\nH2,ABC1234,X\n"
+        )
