@@ -1,5 +1,7 @@
 # Retrouver l’inventaire de l’autre ordinateur
 
+Une [archive complète publiée avec autorisation du propriétaire](../transfert/README.md) permet désormais de transférer l’inventaire corrigé et sa base. Suivre ce guide en priorité.
+
 Les modifications du programme voyagent avec GitHub. La base SQLite et les CSV
 internes restent sur l’ordinateur où ils ont été importés : ils sont exclus du
 suivi Git depuis la version d’import réel.
@@ -15,8 +17,7 @@ suivi Git depuis la version d’import réel.
    `computers_owned.csv`. Copier aussi les deux CSV originaux du superviseur
    s’ils se trouvent ailleurs. Si EVERGREEN_DB ou EVERGREEN_INVENTORY avaient
    été configurées, utiliser les chemins correspondants.
-4. Transférer ces fichiers vers le Mac par le moyen interne autorisé. Ne pas
-   les déposer dans le dépôt GitHub pour contourner leur absence.
+4. Transférer ces fichiers vers le Mac par le moyen interne autorisé. La publication de l’archive actuelle dans le dépôt public a été explicitement autorisée par le propriétaire.
 
 ## Sur le Mac
 
