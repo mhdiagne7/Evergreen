@@ -332,7 +332,8 @@ def test_groups_manual_preview_save_edit_and_plan_do_not_move_inventory(applicat
         "Comment les propositions" in expander.label for expander in app.expander
     )
     app.button(key="ag_create").click().run()
-    app.multiselect(key="ag_filter_building").set_value(["CBY"]).run()
+    app.session_state["ag_map_buildings"] = ["CBY"]
+    app.run()
     app.checkbox(key="ag_select_all").check().run()
     app.text_input(key="ag_create_name").set_value("CBY à vérifier")
     app.button(key="ag_preview").click().run()
@@ -359,13 +360,50 @@ def test_group_creation_is_simple_and_map_opens_in_dialog(application):
     app.run().switch_page("ui/pages/regroup.py").run()
     app.button(key="ag_create").click().run()
     assert not app.radio
-    assert {m.label for m in app.multiselect} == {"Bâtiment", "Salle", "Modèle"}
+    assert {m.label for m in app.multiselect} == {"Salle", "Modèle"}
     labels = {c.label for c in app.checkbox}
     assert "Uniquement les ordinateurs disponibles" not in labels
     assert "Uniquement les postes installés en salle" not in labels
     app.button(key="ag_open_map").click().run()
     assert not app.exception
     assert app.selectbox(key="ag_picker_model")
+    assert app.button(key="ag_confirm_map").disabled
     app.button(key="ag_close_map").click().run()
     assert not app.exception
     assert app.text_input(key="ag_create_name").value == "Nouveau groupe"
+
+
+def test_group_defaults_include_every_model_and_multiple_buildings(application):
+    from core.asset_groups import GroupStore
+
+    app, store, workspace = application
+    app.run().switch_page("ui/pages/regroup.py").run()
+    app.button(key="ag_create").click().run()
+    assert app.checkbox(key="ag_select_all").value
+    assert app.multiselect(key="ag_filter_model").value == []
+    assert app.multiselect(key="ag_filter_room").value == []
+    assert not any("Renouvellement et uniformisation" in e.label for e in app.expander)
+    app.session_state["ag_map_buildings"] = ["CBY", "MRT"]
+    app.run()
+    app.button(key="ag_preview").click().run()
+    app.button(key="ag_save").click().run()
+    assert not app.exception
+    groups = GroupStore(store).groups(workspace)
+    assets = {a["id"]: a for a in GroupStore(store).assets(workspace)}
+    assert {assets[i]["building"] for i in groups[0]["members"]} == {"CBY", "MRT"}
+
+
+def test_map_dialog_requires_confirmation_for_multiple_buildings():
+    app = AppTest.from_string("""
+import streamlit as st
+import map_view
+from ui.asset_groups import building_map_dialog
+map_view.campus_map = lambda *args, **kwargs: ["CBY", "MRT"]
+if "ag_map_buildings" not in st.session_state:
+    building_map_dialog(None, [])
+""")
+    app.run()
+    assert "ag_map_buildings" not in app.session_state
+    app.button(key="ag_confirm_map").click().run()
+    assert not app.exception
+    assert app.session_state["ag_map_buildings"] == ["CBY", "MRT"]
