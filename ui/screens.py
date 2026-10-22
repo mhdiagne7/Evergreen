@@ -134,31 +134,9 @@ def render(name):
         st.page_link(PAGES["regroup"], label="Préparer une intervention →")
     elif name == "regroup":
         heading("Regroupements", "home")
-        st.write(
-            "Choisissez un objectif. Examinez la proposition, enregistrez un lot, puis confirmez sa réalisation sur le terrain."
-        )
-        card(
-            "Par modèle dominant",
-            "Regrouper les modèles déjà les plus présents dans chaque bâtiment, tout en conservant les salles équipées.",
-            "suggestions",
-        )
-        card(
-            "Par blocs proches",
-            "Partager un modèle cible entre plusieurs petits bâtiments voisins.",
-            "blocks",
-        )
-        card(
-            "Renouveler un bâtiment",
-            "Installer le matériel disponible à Morisset et réaffecter les retours plus récents lorsque cela est possible.",
-            "manual",
-        )
-        with st.expander("Comment les propositions sont-elles établies ?"):
-            st.write(
-                "Le moteur utilise les quantités, les modèles dominants, les capacités et les distances disponibles. Il vérifie les échanges et explique les besoins non satisfaits. Il s’agit de règles de planification, pas d’une IA conversationnelle ni d’une garantie d’optimum global."
-            )
-            st.write(
-                "Pour préparer le remplacement d’un ancien modèle, vous pouvez le choisir explicitement comme cible de regroupement. Son âge ne se déduit pas de son numéro : renseignez les années connues dans le catalogue."
-            )
+        from ui.asset_groups import groups_view
+
+        groups_view(*args)
     elif name == "suggestions":
         heading("Regrouper par modèle", "regroup")
         homogenization(*args)
