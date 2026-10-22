@@ -42,7 +42,9 @@ def main():
         previous = st.session_state.get("active_workspace")
         if previous != identifier:
             for key in list(st.session_state):
-                if key.startswith(("selected_", "uniform_", "block_", "receipt_")):
+                if key.startswith(
+                    ("selected_", "uniform_", "block_", "receipt_", "ag_")
+                ):
                     del st.session_state[key]
             st.session_state.active_workspace = identifier
         context = identifier, revision

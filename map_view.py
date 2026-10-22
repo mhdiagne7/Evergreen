@@ -114,12 +114,17 @@ def map_rows(data, models, selected_model=None):
     return rows, missing, colors
 
 
-def campus_map(data, models):
+def campus_map(data, models, key_prefix="map", group_highlight=False):
     st.subheader("Carte du parc informatique")
     options = ["Tous les modèles"] + list(models)
-    selected = st.selectbox("Colorer la carte par modèle", options, key="map_model")
+    selected = st.selectbox(
+        "Colorer la carte par modèle", options, key=key_prefix + "_model"
+    )
     model = None if selected == "Tous les modèles" else selected
     rows, missing, colors = map_rows(data, models, model)
+    if group_highlight:
+        for row in rows:
+            row["color"] = [114, 78, 186, 220]
     if missing:
         st.info(
             "Bâtiments sans coordonnées officielles dans le référentiel : "
@@ -134,7 +139,7 @@ def campus_map(data, models):
     area = st.selectbox(
         "Cadrage de la carte",
         ["Campus principal", "Tous les bâtiments", "Campus Lees", "Roger-Guindon"],
-        key="map_area",
+        key=key_prefix + "_area",
     )
     focus = rows
     if area == "Campus principal":
@@ -177,7 +182,8 @@ def campus_map(data, models):
     )
     layers = [layer, labels]
     if st.checkbox(
-        "Comparer la distance à vol d’oiseau entre deux bâtiments", key="map_compare"
+        "Comparer la distance à vol d’oiseau entre deux bâtiments",
+        key=key_prefix + "_compare",
     ):
         codes = [row["code"] for row in rows]
         left, right = st.columns(2)
@@ -185,10 +191,10 @@ def campus_map(data, models):
             "Bâtiment de départ",
             codes,
             index=codes.index("MRT") if "MRT" in codes else 0,
-            key="map_origin",
+            key=key_prefix + "_origin",
         )
         destination = right.selectbox(
-            "Bâtiment d’arrivée", codes, key="map_destination"
+            "Bâtiment d’arrivée", codes, key=key_prefix + "_destination"
         )
         distance = building_distance(origin, destination)
         st.info(
@@ -239,10 +245,15 @@ def campus_map(data, models):
         height=510,
         on_select="rerun",
         selection_mode="single-object",
-        key="campus_map_" + str(st.session_state.get("active_context", "default")),
+        key=key_prefix
+        + "_campus_map_"
+        + str(st.session_state.get("active_context", "default")),
     )
     legend = []
-    for name, color in colors.items():
+    legend_colors = (
+        {"Groupe sélectionné": [114, 78, 186, 220]} if group_highlight else colors
+    )
+    for name, color in legend_colors.items():
         if model and name != model:
             continue
         rgb = ",".join(str(value) for value in color[:3])

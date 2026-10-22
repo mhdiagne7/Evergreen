@@ -21,8 +21,7 @@ est un instantané explicite et ne se met pas à jour automatiquement.
 La carte du campus se trouve directement sur **Accueil**.
 - **Assistant IA local** : question libre, vérification de la demande, calcul puis proposition.
 - **Bâtiments → bâtiment** : modèles présents, proportions et détail des salles.
-- **Regroupements → modèle dominant / blocs proches / renouvellement** : choisir
-  un objectif, examiner la proposition puis enregistrer le lot.
+- **Regroupements** : créer et conserver des groupes manuels ou automatiques, filtrer les postes et préparer leurs déplacements. Voir [le fonctionnement des groupes](docs/GROUPES.md). Les outils de renouvellement et de regroupement par blocs restent accessibles dans cette page.
 - **Lots de déplacements → lot** : feuille de route, confirmation des opérations
   réalisées et annulation du reste. Préparer un lot ne change pas l’inventaire.
 - **Stock central → réception** : nouveaux ordinateurs, un modèle ou un lot multiple.
@@ -164,7 +163,7 @@ Le survol d'un bâtiment présente les modèles par quantité décroissante, leu
 nombre de postes et leur pourcentage, en lignes de texte distinctes. Le détail du bâtiment
 affiche sa répartition et la part du modèle principal. Une égalité est signalée.
 
-Dans **Regroupements → Par modèle dominant**, le moteur suggère les cibles. Chaque bâtiment reçoit comme cible son modèle installé le plus
+Dans **Regroupements → Renouvellement et uniformisation des modèles → Par modèle dominant**, le moteur suggère les cibles. Chaque bâtiment reçoit comme cible son modèle installé le plus
 présent ; le stock de Morisset n'entre pas dans ce calcul. Une égalité nécessite
 un choix explicite. Les cibles peuvent être ajustées avant le calcul.
 
