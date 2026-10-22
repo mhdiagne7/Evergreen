@@ -466,7 +466,14 @@ class Store:
             for transfer in transfers:
                 if shortest_route(graph, transfer.source, transfer.destination) is None:
                     raise ValueError("Un déplacement n'a pas de chemin renseigné.")
-            data = apply_transfers(data, transfers)
+            if group.get("swap"):
+                if not allow_asset_movement:
+                    raise ValueError("Échange réservé aux déplacements de groupes.")
+                from core.buildings import apply_classroom_swap
+
+                data = apply_classroom_swap(data, transfers)
+            else:
+                data = apply_transfers(data, transfers)
         return data
 
     def batches(self, identifier):

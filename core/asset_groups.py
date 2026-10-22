@@ -90,7 +90,15 @@ def move_assets(db, workspace, data, operations):
             raise ValueError(
                 "Identifiants d’ordinateurs incohérents dans le déplacement."
             )
-        for raw in operation["transfers"]:
+        exact = operation.get("asset_moves")
+        if exact is not None and (
+            len(exact) != len(operation["transfers"]) or len(set(exact)) != len(exact)
+        ):
+            raise ValueError("Identifiants incohérents dans l’échange.")
+        for index, raw in enumerate(operation["transfers"]):
+            specific = (
+                [exact[index]] if exact is not None else operation.get("asset_ids")
+            )
             move = Transfer(**raw)
             rows = list(
                 db.execute(
@@ -253,6 +261,99 @@ def movement_plan(data, assets, destination):
         "buffer": destination,
         "destination": destination,
         "groups": groups,
+    }
+
+
+def individual_plan(data, members, assets, assignments):
+    """Prépare des mouvements individuels ou des échanges atomiques de deux postes."""
+    from core.buildings import apply_classroom_swap
+
+    by_id = {a["id"]: a for a in assets}
+    if set(assignments) - set(members):
+        raise ValueError("Un ordinateur sélectionné n’appartient pas au groupe.")
+    work = data
+    graph = build_graph(data)
+    operations, used = [], set()
+    for identifier, choice in assignments.items():
+        source = by_id.get(identifier)
+        if not source or not source["active"] or not source["available"]:
+            raise ValueError("Un poste est absent ou indisponible.")
+        destination = choice["destination"]
+        if destination == source["room"]:
+            continue
+        if destination not in data.rooms:
+            raise ValueError("Destination inconnue.")
+        partner = choice.get("swap")
+        pair = [source]
+        targets = [destination]
+        if partner:
+            other = by_id.get(partner)
+            if (
+                not other
+                or not other["active"]
+                or not other["available"]
+                or other["room"] != destination
+            ):
+                raise ValueError(
+                    "Le poste à échanger est absent, déplacé ou indisponible."
+                )
+            pair.append(other)
+            targets.append(source["room"])
+        if any(a["id"] in used for a in pair):
+            raise ValueError(
+                "Un ordinateur ne peut participer à deux opérations du même lot."
+            )
+        used.update(a["id"] for a in pair)
+        transfers, meters, labels = [], 0, []
+        for asset, target in zip(pair, targets):
+            route = shortest_route(graph, asset["room"], target)
+            if route is None:
+                raise ValueError("Aucun trajet disponible pour ce déplacement.")
+            transfers.append(
+                Transfer(
+                    asset["room"],
+                    target,
+                    asset["model"],
+                    stock_kind=asset["kind"]
+                    if asset["kind"] in {"new", "returned"}
+                    else "any",
+                )
+            )
+            meters = (
+                meters + route.distance_m
+                if meters is not None and route.distance_m is not None
+                else None
+            )
+            labels.append(route.distance_label)
+        work = (
+            apply_classroom_swap(work, transfers)
+            if partner
+            else apply_transfers(work, transfers)
+        )
+        operations.append(
+            {
+                "room": destination,
+                "source": source["room"],
+                "old_model": pair[-1]["model"],
+                "new_model": source["model"],
+                "delivery_m": meters,
+                "distance_type": " / ".join(sorted(set(labels))),
+                "stock_kind": "any",
+                "swap": bool(partner),
+                "asset_moves": [a["id"] for a in pair],
+                "transfers": [vars(t) for t in transfers],
+            }
+        )
+    if not operations:
+        raise ValueError(
+            "Choisis au moins une destination différente de la salle actuelle."
+        )
+    return {
+        "mode": "asset_group",
+        "building": "Plusieurs salles",
+        "buffer": "",
+        "destination": "Destinations individuelles",
+        "groups": operations,
     }
 
 
@@ -545,7 +646,16 @@ class GroupStore:
                 {"room": room, "capacity": capacity},
             )
 
-    def plan(self, workspace, identifier, version, revision, destination, save=False):
+    def plan(
+        self,
+        workspace,
+        identifier,
+        version,
+        revision,
+        destination=None,
+        save=False,
+        assignments=None,
+    ):
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             group = self._editable(db, workspace, identifier, version)
@@ -573,7 +683,11 @@ class GroupStore:
                 asset["building"] = data.rooms[asset["room"]].building
                 asset["floor"] = floors.get(asset["room"], "")
                 selected.append(asset)
-            plan = movement_plan(data, selected, destination)
+            plan = (
+                individual_plan(data, ids, list(assets.values()), assignments)
+                if assignments is not None
+                else movement_plan(data, selected, destination)
+            )
             plan["asset_group_id"] = identifier
             self.store._validate_plan(data, plan["groups"], allow_asset_movement=True)
             if not save:

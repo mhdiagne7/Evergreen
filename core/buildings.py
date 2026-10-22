@@ -74,6 +74,35 @@ def apply_transfers(data, transfers):
     return updated
 
 
+def apply_classroom_swap(data, transfers):
+    """Un échange indivisible libère les deux postes avant leur réinstallation."""
+    if len(transfers) != 2:
+        raise ValueError("Un échange exige exactement deux postes.")
+    first, second = transfers
+    if (
+        first.source != second.destination
+        or first.destination != second.source
+        or first.source == first.destination
+        or any(t.quantity != 1 or t.stock_kind != "any" for t in transfers)
+        or any(data.rooms[t.source].room_type != "classroom" for t in transfers)
+    ):
+        raise ValueError("Échange invalide entre salles de classe.")
+    for t in transfers:
+        if data.inventory.get((t.source, t.model), 0) < 1:
+            raise ValueError("Un poste à échanger est absent de sa salle.")
+    rooms = data.rooms.copy()
+    for t in transfers:
+        room = rooms[t.destination]
+        if room.capacity is not None:
+            rooms[t.destination] = replace(room, capacity=room.capacity + 1)
+    result = apply_transfers(replace(data, rooms=rooms), transfers)
+    result.rooms = data.rooms
+    for t in transfers:
+        if result.available(t.destination) < 0:
+            raise ValueError("Capacité insuffisante après échange.")
+    return result
+
+
 def building_summary(data, models):
     rows = []
     for building in sorted({room.building for room in data.rooms.values()}):
