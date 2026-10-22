@@ -195,6 +195,139 @@ def create_view(store, workspace, data, revision, groups_store, assets):
             st.rerun()
 
 
+def individual_moves_view(
+    groups_store, workspace, data, revision, assets, members, group
+):
+    from core.campus import building_distance
+
+    assignments = {}
+    rows = []
+    for asset in sorted(members, key=lambda a: (a["model"], a["room"], a["id"])):
+        with st.container(border=True):
+            st.write(
+                "**"
+                + asset["model"]
+                + "** · "
+                + asset["room"]
+                + " · "
+                + (asset["physical_id"] or asset["id"][:15])
+            )
+            origin = data.rooms[asset["room"]].building
+
+            def nearby(room):
+                building = data.rooms[room].building
+                distance = building_distance(origin, building)
+                return (
+                    room != asset["room"],
+                    building != origin,
+                    distance if distance is not None else float("inf"),
+                    room,
+                )
+
+            rooms = sorted(
+                [
+                    room
+                    for room, info in data.rooms.items()
+                    if info.room_type == "classroom" or room == "MRT-STOCK"
+                ],
+                key=nearby,
+            )
+            destination = st.selectbox("Destination", rooms, key="ag_to_" + asset["id"])
+            if destination == asset["room"]:
+                continue
+            distance = building_distance(origin, data.rooms[destination].building)
+            st.caption(
+                "Même bâtiment : distance intérieure non mesurée."
+                if origin == data.rooms[destination].building
+                else (
+                    f"Proximité : {distance:.0f} m à vol d’oiseau."
+                    if distance is not None
+                    else "Distance non renseignée."
+                )
+            )
+            candidates = [
+                a
+                for a in assets
+                if a["active"]
+                and a["available"]
+                and a["room"] == destination
+                and a["id"] != asset["id"]
+                and data.rooms[destination].room_type == "classroom"
+                and data.rooms[asset["room"]].room_type == "classroom"
+            ]
+            by_id = {a["id"]: a for a in candidates}
+            partner = st.selectbox(
+                "Poste à échanger en retour",
+                [None] + list(by_id),
+                format_func=lambda value: (
+                    "Aucun · déplacement simple"
+                    if value is None
+                    else asset_label(by_id[value])
+                ),
+                key="ag_swap_" + asset["id"],
+            )
+            assignments[asset["id"]] = {"destination": destination, "swap": partner}
+            rows.append(
+                {
+                    "Ordinateur": asset["physical_id"] or asset["id"],
+                    "Modèle": asset["model"],
+                    "Depuis": asset["room"],
+                    "Vers": destination,
+                    "Échange en retour": asset_label(by_id[partner])
+                    if partner
+                    else "—",
+                }
+            )
+    if rows:
+        st.subheader("Liste des mouvements et échanges")
+        table(rows)
+        st.download_button(
+            "Exporter la liste",
+            csv_bytes(rows),
+            "echanges.csv",
+            "text/csv",
+            key="ag_moves_export_" + group["id"],
+        )
+    signature = (workspace, revision, group["id"], group["version"], str(assignments))
+    if st.button("Vérifier les déplacements et échanges", key="ag_individual_preview"):
+        try:
+            plan = groups_store.plan(
+                workspace,
+                group["id"],
+                group["version"],
+                revision,
+                assignments=assignments,
+            )
+            st.session_state.ag_individual_draft = (signature, plan)
+        except ValueError as error:
+            st.error(str(error))
+    preview = st.session_state.get("ag_individual_draft")
+    if preview and preview[0] == signature:
+        table(transfer_rows(preview[1], data))
+        confirmed = st.checkbox(
+            "Je confirme cette liste à réaliser", key="ag_individual_confirm"
+        )
+        if st.button(
+            "Enregistrer les échanges planifiés",
+            disabled=not confirmed,
+            key="ag_individual_save",
+        ):
+            try:
+                groups_store.plan(
+                    workspace,
+                    group["id"],
+                    group["version"],
+                    revision,
+                    assignments=assignments,
+                    save=True,
+                )
+                refresh(
+                    "Liste enregistrée. Confirme chaque opération après sa réalisation physique dans Lots de déplacements."
+                )
+            except ValueError as error:
+                st.error(str(error))
+
+
 def group_view(store, workspace, data, revision, groups_store, assets, group):
     by_id = {a["id"]: a for a in assets}
     members = [by_id[item] for item in group["members"] if item in by_id]
@@ -323,6 +456,17 @@ def group_view(store, workspace, data, revision, groups_store, assets, group):
         ):
             store.cancel_batch(workspace, group["batch_id"])
             refresh("Lot annulé. Les opérations déjà confirmées sont conservées.")
+        return
+    mode = st.radio(
+        "Organisation des déplacements",
+        ["Une destination par ordinateur", "Une destination pour tout le groupe"],
+        key="ag_move_mode",
+        horizontal=True,
+    )
+    if mode == "Une destination par ordinateur":
+        individual_moves_view(
+            groups_store, workspace, data, revision, assets, members, group
+        )
         return
     destination = st.selectbox(
         "Salle de destination", sorted(data.rooms), key="ag_destination_" + group["id"]
