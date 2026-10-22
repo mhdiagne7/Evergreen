@@ -373,6 +373,69 @@ class GroupStore:
                 "CREATE UNIQUE INDEX IF NOT EXISTS asset_hostname ON tracked_assets(workspace, hostname COLLATE NOCASE) WHERE hostname != '' AND active=1"
             )
 
+    def consolidate_confirmed_lee_rooms(self, workspace):
+        """Correction de libellés de salles, sans ajout ni déplacement physique."""
+        from collections import Counter
+        from dataclasses import replace
+
+        from core.owned_import import canonical_owned_room
+
+        with self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            _, data = self.store._read(db, workspace)
+            aliases = {
+                room: canonical_owned_room(room)
+                for room in data.rooms
+                if canonical_owned_room(room) != room
+            }
+            if not aliases:
+                return 0
+            if any(target not in data.rooms for target in aliases.values()):
+                raise ValueError("Salle principale absente : consolidation à vérifier.")
+            sync_assets(db, workspace, data)
+            before = sum(data.inventory.values())
+            inventory = Counter()
+            for (room, model), quantity in data.inventory.items():
+                inventory[aliases.get(room, room), model] += quantity
+            data.inventory = dict(inventory)
+            for target in set(aliases.values()):
+                room = data.rooms[target]
+                occupied = data.occupied(target)
+                data.rooms[target] = replace(
+                    room,
+                    capacity=max(room.capacity or 0, occupied),
+                    capacity_basis="observed"
+                    if room.capacity is None or room.capacity < occupied
+                    else room.capacity_basis,
+                )
+            for old, target in aliases.items():
+                db.execute(
+                    "UPDATE tracked_assets SET room=? WHERE workspace=? AND room=?",
+                    (target, workspace, old),
+                )
+                del data.rooms[old]
+            data.connections = [
+                (aliases.get(a, a), aliases.get(b, b), distance, kind)
+                for a, b, distance, kind in data.connections
+                if aliases.get(a, a) != aliases.get(b, b)
+            ]
+            # Les chemins mesurés entre anciens libellés doivent être revérifiés.
+            data.walking_routes = {
+                pair: value
+                for pair, value in data.walking_routes.items()
+                if not any(room in aliases for room in pair)
+            }
+            assert sum(data.inventory.values()) == before
+            self.store._save(db, workspace, data)
+            self.store._event(
+                db,
+                workspace,
+                "Salles LEE corrigées",
+                "Suffixes de postes regroupés dans leurs salles réelles ; total inchangé",
+                {"aliases": aliases},
+            )
+            return len(aliases)
+
     def import_hostnames(self, workspace, content, prefer_unsuffixed=False):
         """Associe uniquement les salles/modèles non ambigus, sans modifier les quantités."""
         import csv

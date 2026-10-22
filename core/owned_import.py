@@ -8,6 +8,16 @@ from collections import Counter
 from core.campus import CENTRAL_STOCK
 from core.data import Dataset, Room
 
+# Suffixes de postes confirmés par l’utilisateur, pas des numéros de salles.
+CONFIRMED_LEE_ROOMS = ("LEE-105", "LEE-107", "LEE-109")
+
+
+def canonical_owned_room(room):
+    for base in CONFIRMED_LEE_ROOMS:
+        if room in {base + "-" + str(index) for index in range(1, 5)}:
+            return base
+    return room
+
 
 def import_owned_computers(content, stock_capacity=None):
     """Chaque ligne ajoute sa quantité ; les répétitions sont signalées.
@@ -46,7 +56,7 @@ def import_owned_computers(content, stock_capacity=None):
             value is None or not value.strip() for value in row.values()
         ):
             raise ValueError(prefix + "cellule vide ou colonne en trop.")
-        room = row["room_id"].strip()
+        room = canonical_owned_room(row["room_id"].strip())
         model = row["model"].strip()
         if not re.fullmatch(r"[A-Z0-9]+-[A-Za-z0-9][A-Za-z0-9 ._/-]*", room):
             raise ValueError(
