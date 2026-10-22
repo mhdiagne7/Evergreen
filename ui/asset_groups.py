@@ -42,6 +42,11 @@ def filters_view(assets, prefix):
         columns = st.columns(2)
         for index, (label, field) in enumerate(FIELDS.items()):
             values = sorted({a[field] for a in assets if a[field] is not None}, key=str)
+            key = prefix + field
+            if key in st.session_state:
+                st.session_state[key] = [
+                    value for value in st.session_state[key] if value in values
+                ]
             selected = columns[index % 2].multiselect(
                 label,
                 values,
@@ -109,6 +114,14 @@ def selection_table(assets, key, default=()):
 
 def create_view(store, workspace, data, revision, groups_store, assets):
     with st.container(border=True):
+        st.subheader("Nom du groupe")
+        title = st.text_input(
+            "Nom du groupe",
+            value="Nouveau groupe",
+            key="ag_create_name",
+            label_visibility="collapsed",
+        )
+        description = st.text_area("Description", key="ag_create_description")
         if st.button(
             "Sélectionner des bâtiments sur la carte",
             type="primary",
@@ -122,19 +135,19 @@ def create_view(store, workspace, data, revision, groups_store, assets):
             if st.button("Effacer la sélection sur la carte", key="ag_clear_map"):
                 st.session_state.pop("ag_map_buildings", None)
                 st.rerun()
-        found = filters_view(assets, "ag_filter_")
-        if buildings:
-            found = [a for a in found if a["building"] in buildings]
+        scoped_assets = [
+            a
+            for a in assets
+            if a["active"]
+            and a["available"]
+            and a["room_type"] == "classroom"
+            and (not buildings or a["building"] in buildings)
+        ]
+        found = filters_view(scoped_assets, "ag_filter_")
         found.sort(key=lambda a: (a["model"].casefold(), a["room"], a["id"]))
         st.caption(f"{len(found)} ordinateur(s) correspondent aux filtres.")
         chosen = []
         drafts = []
-        title = st.text_input(
-            "Nom du groupe",
-            value="Nouveau groupe",
-            key="ag_create_name",
-        )
-        description = st.text_area("Description", key="ag_create_description")
         by_id = {a["id"]: a for a in assets}
         all_selected = st.checkbox(
             "Sélectionner tous les résultats", value=True, key="ag_select_all"
@@ -158,6 +171,17 @@ def create_view(store, workspace, data, revision, groups_store, assets):
             else:
                 st.session_state.ag_draft_preview = signature
         if st.session_state.get("ag_draft_preview") == signature:
+            st.header(title)
+            model_counts = Counter(by_id[item]["model"] for item in chosen)
+            first, second = st.columns(2)
+            first.metric("Modèles différents", len(model_counts))
+            second.metric("Ordinateurs sélectionnés", len(chosen))
+            table(
+                [
+                    {"Modèle": model, "Nombre d’ordinateurs": count}
+                    for model, count in sorted(model_counts.items())
+                ]
+            )
             table(
                 [
                     {
@@ -269,8 +293,7 @@ def individual_moves_view(
             assignments[asset["id"]] = {"destination": destination, "swap": partner}
             rows.append(
                 {
-                    "Référence carte mère": asset.get("motherboard_code")
-                    or "Non renseignée",
+                    "Service Tag": asset.get("service_tag") or "Non renseigné",
                     "Modèle": asset["model"],
                     "Depuis": asset["room"],
                     "Vers": destination,
@@ -329,13 +352,210 @@ def individual_moves_view(
                 st.error(str(error))
 
 
+def close_swap_dialog():
+    st.session_state.ag_swap_open = None
+
+
+def selected_table_asset(event, assets):
+    indices = event.selection.rows
+    return (
+        assets[indices[0]]
+        if len(indices) == 1 and 0 <= indices[0] < len(assets)
+        else None
+    )
+
+
+@st.dialog("Échanges entre ordinateurs", width="large", on_dismiss=close_swap_dialog)
+def swaps_dialog(groups_store, workspace, data, revision, assets, members, group):
+    from core.campus import building_distance
+
+    st.subheader(group["name"])
+    context = (workspace, group["id"], group["version"], revision)
+    draft = st.session_state.get("ag_swap_queue")
+    if not draft or draft["context"] != context:
+        draft = {"context": context, "pairs": []}
+        st.session_state.ag_swap_queue = draft
+    pairs = draft["pairs"]
+    by_id = {a["id"]: a for a in assets}
+    used = {item for pair in pairs for item in pair}
+    member_ids = set(group["members"])
+    eligible = [
+        a
+        for a in assets
+        if a["active"]
+        and a["available"]
+        and a["room_type"] == "classroom"
+        and a["id"] not in used
+    ]
+    left_assets = sorted(
+        [a for a in eligible if a["id"] in member_ids],
+        key=lambda a: (a["model"], a["room"], a.get("service_tag") or a["id"]),
+    )
+    left, right = st.columns(2)
+    table_key = str(context) + str(pairs)
+    with left:
+        st.markdown("**Ordinateurs du groupe**")
+        query = st.text_input("Rechercher dans le groupe", key="ag_swap_left_search")
+        left_assets = [
+            a for a in left_assets if query.casefold() in asset_label(a).casefold()
+        ]
+        left_event = st.dataframe(
+            asset_rows(left_assets),
+            hide_index=True,
+            width="stretch",
+            height=280,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="ag_swap_left_" + table_key + query,
+            column_order=["Service Tag", "Modèle", "Salle actuelle"],
+        )
+        first = selected_table_asset(left_event, left_assets)
+    with right:
+        st.markdown("**Autres ordinateurs disponibles**")
+        query = st.text_input("Rechercher hors du groupe", key="ag_swap_right_search")
+        outside = [
+            a
+            for a in eligible
+            if a["id"] not in member_ids and (not first or a["room"] != first["room"])
+        ]
+
+        def proximity(asset):
+            same_building = first and asset["building"] == first["building"]
+            distance = (
+                building_distance(first["building"], asset["building"])
+                if first
+                else None
+            )
+            return (
+                not same_building,
+                distance if distance is not None else float("inf"),
+                asset["room"],
+                asset["model"],
+                asset["id"],
+            )
+
+        outside.sort(key=proximity)
+        outside = [a for a in outside if query.casefold() in asset_label(a).casefold()]
+        right_event = st.dataframe(
+            asset_rows(outside),
+            hide_index=True,
+            width="stretch",
+            height=280,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="ag_swap_right_"
+            + table_key
+            + str(first["id"] if first else None)
+            + query,
+            column_order=["Service Tag", "Modèle", "Salle actuelle"],
+        )
+        second = selected_table_asset(right_event, outside)
+    st.caption(
+        "Sélectionne une ligne dans chaque tableau. Les postes hors du groupe sont triés par bâtiment puis proximité à vol d’oiseau du poste choisi."
+    )
+    if first and second:
+        st.write(asset_label(first) + " ⇄ " + asset_label(second))
+
+    def assignments_for(items):
+        return {
+            one: {"destination": by_id[two]["room"], "swap": two} for one, two in items
+        }
+
+    if st.button(
+        "Swap · ajouter à la liste",
+        type="primary",
+        disabled=not (first and second),
+        key="ag_swap_add",
+    ):
+        proposed = pairs + [(first["id"], second["id"])]
+        try:
+            groups_store.plan(
+                workspace,
+                group["id"],
+                group["version"],
+                revision,
+                assignments=assignments_for(proposed),
+            )
+            draft["pairs"] = proposed
+            st.session_state.ag_swap_queue = draft
+            st.rerun()
+        except ValueError as error:
+            st.error(str(error))
+    if pairs:
+        st.subheader("Liste des échanges préparés")
+        rows = []
+        for index, (one, two) in enumerate(pairs, 1):
+            for source, target in [(by_id[one], by_id[two]), (by_id[two], by_id[one])]:
+                rows.append(
+                    {
+                        "Échange": index,
+                        "Service Tag": source.get("service_tag") or "Non renseigné",
+                        "Modèle": source["model"],
+                        "Départ": source["room"],
+                        "Destination": target["room"],
+                    }
+                )
+        table(rows)
+        st.download_button(
+            "Exporter les échanges",
+            csv_bytes(rows),
+            "echanges.csv",
+            "text/csv",
+            key="ag_swap_export",
+        )
+        remove = st.selectbox(
+            "Échange à retirer",
+            range(len(pairs)),
+            format_func=lambda i: (
+                f"{i + 1} · {asset_label(by_id[pairs[i][0]])} ⇄ {asset_label(by_id[pairs[i][1]])}"
+            ),
+            key="ag_swap_remove_choice_" + str(pairs),
+        )
+        if st.button("Retirer de la liste", key="ag_swap_remove"):
+            draft["pairs"] = [pair for i, pair in enumerate(pairs) if i != remove]
+            st.session_state.ag_swap_queue = draft
+            st.rerun()
+        confirmed = st.checkbox(
+            "Je confirme ces échanges à réaliser", key="ag_swap_confirm_" + str(pairs)
+        )
+        if st.button(
+            "Enregistrer la liste des échanges",
+            type="primary",
+            disabled=not confirmed,
+            key="ag_swap_save",
+        ):
+            try:
+                groups_store.plan(
+                    workspace,
+                    group["id"],
+                    group["version"],
+                    revision,
+                    assignments=assignments_for(pairs),
+                    save=True,
+                )
+                close_swap_dialog()
+                refresh(
+                    "Échanges planifiés. Confirme leur réalisation dans Lots de déplacements pour mettre à jour l’inventaire."
+                )
+            except ValueError as error:
+                st.error(str(error))
+    if not pairs:
+        with st.expander("Déplacer un poste sans échange"):
+            individual_moves_view(
+                groups_store, workspace, data, revision, assets, members, group
+            )
+    if st.button("Fermer", key="ag_swap_close"):
+        close_swap_dialog()
+        st.rerun()
+
+
 def group_view(store, workspace, data, revision, groups_store, assets, group):
     by_id = {a["id"]: a for a in assets}
     members = [by_id[item] for item in group["members"] if item in by_id]
     overlaps = Counter(
         item for g in groups_store.groups(workspace) for item in g["members"]
     )
-    st.subheader(group["name"])
+    st.header(group["name"])
     if group["description"]:
         st.write(group["description"])
     first, second, third = st.columns(3)
@@ -458,9 +678,15 @@ def group_view(store, workspace, data, revision, groups_store, assets, group):
             store.cancel_batch(workspace, group["batch_id"])
             refresh("Lot annulé. Les opérations déjà confirmées sont conservées.")
         return
-    individual_moves_view(
-        groups_store, workspace, data, revision, assets, members, group
-    )
+    if st.button(
+        "Ouvrir la fenêtre des déplacements et swaps",
+        type="primary",
+        width="stretch",
+        key="ag_open_swaps",
+    ):
+        st.session_state.ag_swap_open = group["id"]
+    if st.session_state.get("ag_swap_open") == group["id"]:
+        swaps_dialog(groups_store, workspace, data, revision, assets, members, group)
 
 
 def groups_view(store, workspace, data, models, revision):
