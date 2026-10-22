@@ -24,7 +24,7 @@ La carte du campus se trouve directement sur **Accueil**.
 - **Lots de déplacements → lot** : feuille de route, confirmation des opérations
   réalisées et annulation du reste. Préparer un lot ne change pas l’inventaire.
 - **Stock central → réception** : nouveaux ordinateurs, un modèle ou un lot multiple.
-- **Catalogue des modèles** : formats vérifiés et années de génération connues.
+- **Catalogue des modèles** : tableau des modèles présents, quantités et configurations CPU/RAM/stockage issues des CSV techniques, avec export.
 - **Historique** : changements enregistrés. **Données et sauvegardes** : imports,
   capacité du stock, exports et sauvegarde SQLite.
 - **Salles et trajets** : destinations compatibles et distances disponibles.
@@ -368,3 +368,5 @@ Une réception multiple valide toutes les lignes et la capacité avant toute
 nouveaux postes sont ajoutés uniquement au stock neuf de Morisset ; les retours
 ne changent pas. La remise à zéro du stock est une correction explicite et
 historisée ; elle ne supprime aucun ordinateur installé dans une salle.
+
+Le catalogue est en consultation : les formulaires de format physique, d’ajout sans quantité et d’année de génération sont retirés. Les caractéristiques techniques sont rapprochées des seuls postes déjà inventoriés par hostname et modèle. Plusieurs configurations d’un même modèle sont conservées, sans extrapolation aux postes non documentés. « Fiches techniques » indique le nombre de postes disposant de caractéristiques importées. Les formats physiques déjà documentés sont conservés ; les CSV techniques ne permettent pas de déduire une année ni un format de boîtier absent.
