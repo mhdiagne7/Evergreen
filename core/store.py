@@ -137,6 +137,9 @@ class Store:
             )
 
     def _save(self, db, identifier, data):
+        from core.asset_groups import sync_assets
+
+        sync_assets(db, identifier, data)
         db.execute(
             "UPDATE workspaces SET data=?,revision=revision+1 WHERE id=?",
             (encode_data(data), identifier),
@@ -410,7 +413,10 @@ class Store:
             row, data = self._read(db, identifier)
             self._check_revision(row, revision)
             self._validate_plan(
-                data, plan["groups"], plan.get("mode") == "homogenization"
+                data,
+                plan["groups"],
+                plan.get("mode") == "homogenization",
+                plan.get("mode") == "asset_group",
             )
             batch_id = uuid.uuid4().hex
             db.execute(
@@ -427,7 +433,9 @@ class Store:
             )
         return batch_id
 
-    def _validate_plan(self, data, groups, allow_regrouping=False):
+    def _validate_plan(
+        self, data, groups, allow_regrouping=False, allow_asset_movement=False
+    ):
         graph = build_graph(data)
         for group in groups:
             transfers = [Transfer(**move) for move in group["transfers"]]
@@ -438,7 +446,7 @@ class Store:
                     raise ValueError(
                         "Cette catégorie de déplacement exige un lot de regroupement."
                     )
-                if transfer.stock_kind != "returned":
+                if transfer.stock_kind != "returned" or allow_asset_movement:
                     continue
                 installed = [
                     model
@@ -502,8 +510,14 @@ class Store:
             # L'ordre du plan est conservé, même si la sélection est différente.
             chosen = [plan["groups"][i] for i in sorted(completed)]
             updated = self._validate_plan(
-                data, chosen, plan.get("mode") == "homogenization"
+                data,
+                chosen,
+                plan.get("mode") == "homogenization",
+                plan.get("mode") == "asset_group",
             )
+            from core.asset_groups import move_assets
+
+            move_assets(db, identifier, data, chosen)
             self._save(db, identifier, updated)
             for i in completed:
                 plan["groups"][i]["completed"] = True
