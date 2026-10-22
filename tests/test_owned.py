@@ -143,3 +143,14 @@ def test_central_stock_without_same_building_reserve():
     result = apply_transfers(data, transfers)
     assert result.inventory[CENTRAL_STOCK, "Old"] == 1
     assert data.inventory.get((CENTRAL_STOCK, "Old"), 0) == 0
+
+
+def test_lee_post_suffixes_are_consolidated_into_confirmed_classrooms():
+    data = import_owned_computers(
+        b"room_id,model,quantity\nLEE-105,OptiPlex 5000,1\nLEE-105-1,OptiPlex 5000,1\nLEE-105-2,OptiPlex 5000,1\nLEE-105-3,OptiPlex 5000,1\nLEE-105-4,OptiPlex 5000,1\nLEE-105-5,Other,1\n"
+    )
+    assert data.inventory["LEE-105", "OptiPlex 5000"] == 5
+    assert data.rooms["LEE-105"].capacity == 5
+    assert "LEE-105-1" not in data.rooms
+    assert "LEE-105-5" in data.rooms
+    assert sum(data.inventory.values()) == 6

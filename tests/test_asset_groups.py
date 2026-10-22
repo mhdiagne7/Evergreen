@@ -339,3 +339,41 @@ def test_hostname_import_rejects_duplicate_and_skips_ambiguous_or_wrong_model(ca
         w, b"Hostname,Model\n4299-CBY102,Y\n4299-CBY102-1,Y\n", prefer_unsuffixed=True
     )
     assert count == 1
+
+
+def test_consolidate_lee_preserves_computers_hostnames_groups_and_total(tmp_path):
+    from dataclasses import replace
+
+    s = Store(tmp_path / "lee.sqlite3")
+    data = import_owned_computers(b"room_id,model,quantity\nLEE-105,X,5\n")
+    data.rooms["LEE-105"] = replace(data.rooms["LEE-105"], capacity=1)
+    data.inventory["LEE-105", "X"] = 1
+    for index in range(1, 5):
+        data.rooms[f"LEE-105-{index}"] = data.rooms["LEE-105"]
+        data.inventory[f"LEE-105-{index}", "X"] = 1
+    w = s.create_workspace("Ancien import", data)
+    groups = GroupStore(s)
+    csv = (
+        "Hostname,Model\n4299-LEE105,X\n"
+        + "".join(f"4299-LEE105-{i},X\n" for i in range(1, 5))
+    ).encode()
+    groups.import_hostnames(w, csv)
+    assets = groups.assets(w)
+    identifier = groups.save_many(
+        w, 0, [{"name": "LEE", "description": "", "members": [a["id"] for a in assets]}]
+    )[0]
+    assert groups.consolidate_confirmed_lee_rooms(w) == 4
+    count, pending = groups.import_hostnames(w, csv)
+    assert count == 1 and not pending
+    after = groups.assets(w)
+    assert {a["id"] for a in after} == {a["id"] for a in assets}
+    assert {a["room"] for a in after} == {"LEE-105"}
+    assert {a["hostname"] for a in after} == {"4299-LEE105"} | {
+        f"4299-LEE105-{i}" for i in range(1, 5)
+    }
+    assert groups.groups(w)[0]["id"] == identifier
+    assert s.load(w)[0].inventory["LEE-105", "X"] == 5
+    assert sum(s.load(w)[0].inventory.values()) == 5
+    revision = s.load(w)[2]
+    assert groups.consolidate_confirmed_lee_rooms(w) == 0
+    assert s.load(w)[2] == revision
