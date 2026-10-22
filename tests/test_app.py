@@ -266,3 +266,39 @@ def test_assistant_requires_review_and_never_updates_inventory(
     assert store.load(key) == before
     app.text_area[0].set_value("Autre question").run()
     assert not app.dataframe
+
+
+def test_home_displays_map_without_removed_sections_and_inventory_banner(application):
+    app, _, _ = application
+    app.run()
+    assert not app.exception
+    assert any(
+        heading.value == "Carte du parc informatique" for heading in app.subheader
+    )
+    text = " ".join(item.value for item in app.caption)
+    assert "Version de l’inventaire" not in text
+    assert "Survole un bâtiment" not in text
+    assert "Extraction du" not in text
+    assert not any(
+        heading.value in {"Que souhaitez-vous faire ?", "À préparer"}
+        for heading in app.subheader
+    )
+
+
+def test_model_presence_navigation_filter_and_return(application):
+    app, _, _ = application
+    app.run().switch_page("ui/pages/computer_models.py").run()
+    assert not app.exception
+    assert not any(button.key == "presence_model_New" for button in app.button)
+    app.text_input(key="presence_search").set_value("Old").run()
+    app.button(key="presence_model_Old").click().run()
+    assert app.session_state.selected_computer_model == "Old"
+    app.switch_page("ui/pages/computer_model.py").run()
+    assert app.main.title[0].value == "Old"
+    assert app.metric[0].value == "5"
+    assert app.metric[1].value == "5"
+    app.selectbox(key="presence_building_filter").select("CBY").run()
+    assert len(app.dataframe[-1].value) == 2
+    app.text_input(key="presence_room_search").set_value("Absent").run()
+    assert any("Aucune salle" in info.value for info in app.info)
+    assert not app.exception
