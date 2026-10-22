@@ -3,7 +3,7 @@
 import streamlit as st
 
 from core.export import csv_bytes
-from core.model_catalog import FORMATS, catalog, model_profile, model_rows
+from core.model_catalog import catalog, inventory_catalog_rows
 from ui.common import refresh, table
 
 
@@ -111,78 +111,40 @@ def models_view(store, identifier, data, models, revision):
     st.caption(
         "Classement des boîtiers de bureau du plus grand au plus petit : Tour → SFF / Slim → Micro. Les portables sont séparés ; les noms incomplets restent à confirmer. La taille n’indique ni l’âge ni la puissance."
     )
-    include_reference = st.checkbox(
-        "Afficher aussi les modèles de référence non présents dans cet inventaire",
-        key="catalog_reference",
-    )
-    names = sorted(set(models) | set(catalog())) if include_reference else models
+    from core.asset_groups import GroupStore
+
+    assets = GroupStore(store).assets(identifier)
+    rows = inventory_catalog_rows(data, assets)
+    if not rows:
+        st.info("Aucun modèle présent dans cet inventaire.")
+        return
     st.dataframe(
-        model_rows(names, data),
+        rows,
         hide_index=True,
         width="stretch",
+        column_order=[
+            "Modèle",
+            "Format",
+            "Postes",
+            "Fiches techniques",
+            "Processeurs observés",
+            "RAM observée",
+            "Stockage observé",
+            "Fiche constructeur",
+        ],
         column_config={
             "Fiche constructeur": st.column_config.LinkColumn(
                 display_text="Consulter Dell"
             )
         },
     )
-    with st.expander("Confirmer le format physique d’un modèle"):
-        st.caption(
-            "Ne confirme un format pour tout un modèle que si les boîtiers concernés sont identiques. Le numéro 3060 seul ne suffit pas à conclure Micro."
-        )
-        model = st.selectbox("Modèle à vérifier", models, key="format_model")
-        profile = model_profile(model, data.model_formats)
-        with st.form("model_format"):
-            form = st.selectbox(
-                "Format observé sur le campus",
-                FORMATS,
-                index=FORMATS.index(profile["format"]),
-                key="format_" + model,
-            )
-            confirmed = st.checkbox(
-                "J’ai vérifié le format de ces boîtiers", key="format_confirm"
-            )
-            save = st.form_submit_button("Enregistrer le format")
-        if save:
-            if not confirmed:
-                st.error("Confirme le format après vérification du matériel.")
-            else:
-                try:
-                    store.set_model_format(identifier, model, form, revision)
-                    refresh("Format physique enregistré.")
-                except ValueError as error:
-                    st.error(str(error))
-    with st.expander("Ajouter un modèle sans quantité"):
-        with st.form("new_model"):
-            model = st.text_input("Nouveau modèle", key="new_model_name")
-            submit = st.form_submit_button("Ajouter au catalogue")
-        if submit:
-            try:
-                store.add_model(identifier, model)
-                refresh("Modèle ajouté au catalogue ; aucun stock ajouté.")
-            except ValueError as error:
-                st.error(str(error))
-    with st.expander("Années des modèles pour les réaffectations"):
-        st.caption(
-            "Les années connues servent à protéger les postes plus récents, indépendamment du format physique."
-        )
-        dated_model = st.selectbox("Modèle à dater", models, key="model_to_date")
-        with st.form("model_year"):
-            year = st.number_input(
-                "Année de génération",
-                min_value=1980,
-                max_value=2100,
-                value=data.model_years.get(dated_model),
-                step=1,
-                key="model_year_" + dated_model,
-            )
-            save = st.form_submit_button("Enregistrer l’année du modèle")
-        if save:
-            try:
-                store.set_model_year(identifier, dated_model, year, revision)
-                refresh("Année du modèle enregistrée.")
-            except ValueError as error:
-                st.error(str(error))
+    st.download_button(
+        "Exporter le catalogue",
+        csv_bytes(rows),
+        "catalogue-modeles.csv",
+        "text/csv",
+        key="catalog_export",
+    )
 
 
 def stock_view(store, identifier, data, models, revision, section="available"):
