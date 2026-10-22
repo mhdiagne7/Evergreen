@@ -365,6 +365,13 @@ class GroupStore:
             columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(tracked_assets)")
             }
+            if "service_tag" not in columns:
+                db.execute(
+                    "ALTER TABLE tracked_assets ADD COLUMN service_tag TEXT NOT NULL DEFAULT ''"
+                )
+            db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS asset_service_tag ON tracked_assets(workspace, service_tag COLLATE NOCASE) WHERE service_tag != '' AND active=1"
+            )
             if "motherboard_code" not in columns:
                 db.execute(
                     "ALTER TABLE tracked_assets ADD COLUMN motherboard_code TEXT NOT NULL DEFAULT ''"
@@ -376,6 +383,70 @@ class GroupStore:
             db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS asset_hostname ON tracked_assets(workspace, hostname COLLATE NOCASE) WHERE hostname != '' AND active=1"
             )
+
+    def import_service_tags(self, workspace, content):
+        """Identifiants physiques uniques, associés aux seuls postes déjà inventoriés."""
+        import csv
+        import io
+        import re
+
+        reader = csv.DictReader(
+            io.StringIO(content.decode("utf-8-sig")), skipinitialspace=True
+        )
+        if not reader.fieldnames or not {"Hostname", "Service Tag", "Model"}.issubset(
+            reader.fieldnames
+        ):
+            raise ValueError("Colonnes attendues : Hostname, Service Tag et Model.")
+        catalog, tags = {}, set()
+        for row in reader:
+            hostname = (row.get("Hostname") or "").strip().casefold()
+            tag = (row.get("Service Tag") or "").strip().upper()
+            model = (row.get("Model") or "").strip()
+            if (
+                not hostname
+                or not model
+                or None in row
+                or not re.fullmatch(r"[A-Z0-9-]{1,80}", tag)
+            ):
+                raise ValueError("Hostname, modèle ou Service Tag manquant/invalide.")
+            if hostname in catalog or tag in tags:
+                raise ValueError("Hostname ou Service Tag en double dans le CSV.")
+            catalog[hostname] = (model, tag)
+            tags.add(tag)
+        if not catalog:
+            raise ValueError("CSV vide.")
+        with self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            _, data = self.store._read(db, workspace)
+            sync_assets(db, workspace, data)
+            updated = 0
+            for asset in db.execute(
+                "SELECT * FROM tracked_assets WHERE workspace=? AND active=1",
+                (workspace,),
+            ).fetchall():
+                candidate = catalog.get(asset["hostname"].casefold())
+                if candidate and candidate[0] == asset["model"]:
+                    conflict = db.execute(
+                        "SELECT id FROM tracked_assets WHERE workspace=? AND active=1 AND service_tag=? COLLATE NOCASE AND id!=?",
+                        (workspace, candidate[1], asset["id"]),
+                    ).fetchone()
+                    if conflict:
+                        raise ValueError(
+                            "Un Service Tag est déjà attribué à un autre poste."
+                        )
+                    db.execute(
+                        "UPDATE tracked_assets SET service_tag=? WHERE id=?",
+                        (candidate[1], asset["id"]),
+                    )
+                    updated += 1
+            self.store._event(
+                db,
+                workspace,
+                "Service Tags importés",
+                "Postes existants uniquement ; inventaire et emplacements inchangés",
+                {"matched": updated},
+            )
+            return updated
 
     def import_motherboard_codes(self, workspace, content):
         """Rapproche les postes existants par hostname/modèle, sans créer de poste."""
