@@ -115,6 +115,8 @@ def models_view(store, identifier, data, models, revision):
 
     assets = GroupStore(store).assets(identifier)
     rows = inventory_catalog_rows(data, assets)
+    for row in rows:
+        row.pop("Fiche constructeur", None)
     if not rows:
         st.info("Aucun modèle présent dans cet inventaire.")
         return
@@ -130,13 +132,7 @@ def models_view(store, identifier, data, models, revision):
             "Processeurs observés",
             "RAM observée",
             "Stockage observé",
-            "Fiche constructeur",
         ],
-        column_config={
-            "Fiche constructeur": st.column_config.LinkColumn(
-                display_text="Consulter Dell"
-            )
-        },
     )
     st.download_button(
         "Exporter le catalogue",
