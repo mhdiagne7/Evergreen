@@ -11,6 +11,7 @@ from core.graph import build_graph
 from core.homogeneity import building_models, dominant_models
 from core.routing import shortest_route
 from core.store import DEFAULT_DB, Store
+from map_view import campus_map
 from room_views import recommendations, show_route
 from ui.batches import batches_view
 from ui.block_planning import block_planning
@@ -19,6 +20,7 @@ from ui.dashboard import building_detail
 from ui.distances import google_distances
 from ui.homogeneity import homogenization
 from ui.imports import import_form
+from ui.model_presence import model_presence_detail, models_presence
 from ui.navigation import PAGES, go, heading
 from ui.planning import manual_planning
 from ui.stock import backup_view, models_view, stock_view
@@ -69,32 +71,14 @@ def render(name):
             ],
         ):
             col.metric(title, value)
-        st.subheader("Que souhaitez-vous faire ?")
-        for col, title, text, target in zip(
-            st.columns(3),
-            ["Consulter le parc", "Regrouper", "Suivre les lots"],
-            [
-                "Les modèles et les salles de chaque bâtiment.",
-                "Choisir les modèles et les bâtiments à regrouper.",
-                "Confirmer les interventions réellement effectuées.",
-            ],
-            ["buildings", "regroup", "lots"],
-        ):
-            with col:
-                card(title, text, target)
-        st.subheader("À préparer")
-        stale = sum(b["revision"] != revision for b in active)
-        if stale:
-            st.info(
-                f"{stale} lot(s) reposent sur une ancienne version de l’inventaire et devront être recalculés."
-            )
-        unknown = sum(m not in data.model_years for m in models)
-        if unknown:
-            st.caption(
-                f"{unknown} modèle(s) sans année de génération : leur ancienneté ne sera pas devinée."
-            )
-            st.page_link(PAGES["models"], label="Compléter le catalogue →")
-        st.page_link(PAGES["receipts"], label="Enregistrer une réception de matériel →")
+        selected = campus_map(data, models)
+        if selected in buildings:
+            if st.button("Voir les salles de " + selected):
+                go("building", selected_building=selected)
+    elif name == "computer_models":
+        models_presence(data)
+    elif name == "computer_model":
+        model_presence_detail(data)
     elif name == "buildings":
         heading("Bâtiments", "home")
         query = st.text_input("Rechercher un bâtiment", placeholder="Code du bâtiment")
@@ -246,15 +230,10 @@ def render(name):
         assistant_view(*args)
     elif name == "map":
         heading("Carte du campus", "home")
-        from map_view import campus_map
-
         selected = campus_map(data, models)
         if selected in buildings:
             if st.button("Voir les salles de " + selected):
                 go("building", selected_building=selected)
-        st.caption(
-            "Une seule réserve centrale à Morisset. Les autres bâtiments présentent les postes installés dans leurs salles."
-        )
     elif name == "routes":
         heading("Salles et trajets", "buildings")
         google_distances(data, store, identifier, revision)

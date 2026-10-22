@@ -8,6 +8,8 @@ TITLES = {
     "assistant": "Assistant IA local",
     "buildings": "Bâtiments",
     "building": "Détail du bâtiment",
+    "computer_models": "Modèles dans les salles",
+    "computer_model": "Détail du modèle",
     "regroup": "Regroupements",
     "suggestions": "Par modèle dominant",
     "blocks": "Par blocs proches",
