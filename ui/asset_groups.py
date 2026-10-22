@@ -16,14 +16,13 @@ FIELDS = {"Salle": "room", "Modèle": "model"}
 
 
 def asset_label(asset):
-    return f"{asset['physical_id'] or asset['id'][:15]} · {asset['room']} · {asset['model']}"
+    return f"{asset.get('hostname') or 'Hostname non renseigné'} · {asset['room']} · {asset['model']}"
 
 
 def asset_rows(assets, origins=None):
     return [
         {
-            "Identifiant Evergreen": a["id"],
-            "Numéro d’inventaire réel": a["physical_id"] or "Non renseigné",
+            "Hostname": a.get("hostname") or "Non renseigné",
             "Modèle": a["model"],
             "Bâtiment": a["building"],
             "Salle actuelle": a["room"],
@@ -85,6 +84,7 @@ def selection_table(assets, key, default=()):
         {
             "Choisir": a["id"] in default,
             "ID": a["id"],
+            "Hostname": a.get("hostname") or "Non renseigné",
             "Salle": a["room"],
             "Modèle": a["model"],
         }
@@ -210,7 +210,7 @@ def individual_moves_view(
                 + "** · "
                 + asset["room"]
                 + " · "
-                + (asset["physical_id"] or asset["id"][:15])
+                + (asset.get("hostname") or "Hostname non renseigné")
             )
             origin = data.rooms[asset["room"]].building
 
@@ -269,7 +269,7 @@ def individual_moves_view(
             assignments[asset["id"]] = {"destination": destination, "swap": partner}
             rows.append(
                 {
-                    "Ordinateur": asset["physical_id"] or asset["id"],
+                    "Hostname": asset.get("hostname") or "Non renseigné",
                     "Modèle": asset["model"],
                     "Depuis": asset["room"],
                     "Vers": destination,
