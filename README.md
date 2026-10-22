@@ -2,10 +2,51 @@
 
 Application locale en français pour suivre les ordinateurs par bâtiment,
 préparer les renouvellements et enregistrer les déplacements réalisés.
-L'interface Streamlit conserve ses cinq onglets. Le **stock central est à MRT** :
+Le dashboard propose une page par tâche, avec une navigation latérale et des liens de retour. Le **stock central est à MRT** :
 aucune réserve n'est créée dans les autres bâtiments.
 
+## Utiliser le dashboard
+
+- **Accueil** : totaux du parc, lots à suivre et informations à compléter.
+- **Bâtiments → bâtiment** : modèles présents, proportions et détail des salles.
+- **Regroupements → modèle dominant / blocs proches / renouvellement** : choisir
+  un objectif, examiner la proposition puis enregistrer le lot.
+- **Lots de déplacements → lot** : feuille de route, confirmation des opérations
+  réalisées et annulation du reste. Préparer un lot ne change pas l’inventaire.
+- **Stock central → réception** : nouveaux ordinateurs, un modèle ou un lot multiple.
+- **Catalogue des modèles** : formats vérifiés et années de génération connues.
+- **Historique** : changements enregistrés. **Données et sauvegardes** : imports,
+  capacité du stock, exports et sauvegarde SQLite.
+- **Salles et trajets** : carte, destinations compatibles et distances disponibles.
+
+Chaque rubrique a sa propre page. Le lien en haut permet de revenir au niveau
+parent ; le menu latéral reste accessible. Après un rechargement complet, une
+page de détail sans sélection invite à reprendre la liste.
+
+### Aide à la décision et IA
+
+L’assistant actuel est un moteur de règles vérifiables : modèle dominant,
+quantités, capacités, protection des générations connues et trajets. Il peut
+proposer des échanges et des blocs de bâtiments. Il ne comprend pas encore de
+questions en langage libre et ne garantit pas un optimum global.
+
+Un futur assistant conversationnel pourrait traduire une question en paramètres
+de ces mêmes fonctions, expliquer les résultats et présenter une proposition.
+Il ne devrait jamais modifier les stocks directement ni inventer des quantités.
+Le choix d’un modèle local ou d’un service externe et les données autorisées à lui
+être transmises restent à définir avant cette intégration.
+
+Pour rassembler un modèle ancien avant remplacement, choisir explicitement ce
+modèle comme cible dans le regroupement. Examiner les générations protégées et
+les besoins : l’ancienneté ne se déduit pas du nom commercial.
+
+Le [prompt de référence](docs/PROMPT_DASHBOARD.md) décrit les objectifs du produit
+et les critères à conserver pour les prochaines améliorations.
+
 ## Lancer l'application
+
+Le dossier actuel sur ce Mac est `/Users/habiballah/Documents/Evergreen`.
+Les lanceurs utilisent leur propre dossier, sans chemin vers un ancien dossier caché.
 
 Dans le dossier du projet, avec Python 3.11 ou plus récent :
 
@@ -25,8 +66,7 @@ serveur. Si un autre serveur utilise ce port, ajouter `--server.port 8502`.
 
 ## Importer l'inventaire réel
 
-L'application démarre sans démonstration ni quantités fictives. Dans la barre
-latérale, sélectionner **Importer un inventaire**, donner un nom et fournir un
+L'application démarre sans démonstration ni quantités fictives. Dans **Données et sauvegardes**, sélectionner **Importer un inventaire**, donner un nom et fournir un
 CSV UTF-8 (virgule ou point-virgule) contenant :
 
 ```text
@@ -50,7 +90,7 @@ Les salles à plusieurs postes restent visibles et leur inventaire est conservé
 physique supposé. Il démarre vide : le CSV d'ordinateurs installés ne permet pas
 de déduire le matériel disponible en stock. Sa capacité physique est inconnue ;
 aucune limite n'est configurée par défaut. Une limite peut être définie dans
-**Stock et modèles**, puis sera appliquée aux arrivages et aux retours.
+**Données et sauvegardes**, puis sera appliquée aux arrivages et aux retours.
 
 Pour initialiser cet ordinateur une seule fois sans passer par l'import manuel,
 placer une copie du CSV dans `private/computers_owned.csv`. Son empreinte évite de
@@ -83,8 +123,7 @@ Le survol d'un bâtiment présente les modèles par quantité décroissante, leu
 nombre de postes et leur pourcentage, en lignes de texte distinctes. Le détail du bâtiment
 affiche sa répartition et la part du modèle principal. Une égalité est signalée.
 
-Dans **Planifier Evergreen**, le mode par défaut est **Regrouper par modèle
-dominant**. Chaque bâtiment reçoit comme cible son modèle installé le plus
+Dans **Regroupements → Par modèle dominant**, le moteur suggère les cibles. Chaque bâtiment reçoit comme cible son modèle installé le plus
 présent ; le stock de Morisset n'entre pas dans ce calcul. Une égalité nécessite
 un choix explicite. Les cibles peuvent être ajustées avant le calcul.
 
@@ -149,7 +188,7 @@ L'application n'est pas un outil officiel de l'université.
 
 ## Stock et nouveaux modèles
 
-Dans **Stock et modèles** :
+Dans **Stock central → Enregistrer une réception** et **Catalogue des modèles** :
 
 1. Ajouter le nom du nouveau modèle au catalogue.
 2. Choisir ce modèle et saisir la quantité réellement reçue à MRT.
@@ -199,7 +238,7 @@ puis effectuer les éventuelles réaffectations dans l'ordre proposé. Une limit
 doit donc permettre le transit avant la livraison. Si les contraintes empêchent
 de satisfaire l'objectif, le manque apparaît dans la synthèse.
 
-Enregistrer le lot ne réserve ni ne déplace le stock. Dans **Lots et historique**,
+Enregistrer le lot ne réserve ni ne déplace le stock. Dans **Lots de déplacements → Détail du lot**,
 sélectionner les interventions entièrement terminées, ajouter une note de
 réalisation et confirmer leur exécution physique. Chaque confirmation est une
 transaction : tout est appliqué ensemble ou rien. Une confirmation partielle est
@@ -219,7 +258,7 @@ reste conservé dans une ancienne base pour ne pas effacer son historique, mais
 n'est plus proposé dans l'interface. Aucune migration n'écrase les autres espaces.
 
 Exporter l'inventaire courant ou préparer une sauvegarde complète dans
-**Stock et modèles**. La sauvegarde conserve tous les espaces et leurs historiques.
+**Données et sauvegardes**. La sauvegarde conserve tous les espaces et leurs historiques.
 Pour restaurer, arrêter le serveur, mettre de côté la base actuelle, remplacer
 la base par la sauvegarde, puis relancer. Le CSV courant seul ne conserve ni les
 lots ni l'historique. La base n'est pas synchronisée entre ordinateurs.

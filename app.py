@@ -1,96 +1,101 @@
-"""Point d'entrée Streamlit : données, navigation et vues de l'application."""
+"""Evergreen : un espace de travail, une page par tâche."""
 
 import os
 from pathlib import Path
 
 import streamlit as st
 
-from core.graph import build_graph
-from core.routing import shortest_route
 from core.store import DEFAULT_DB, Store
-from room_views import recommendations, show_route
-from ui.batches import batches_view
-from ui.dashboard import overview
-from ui.distances import google_distances
-from ui.imports import bootstrap_inventory, sidebar
-from ui.planning import planning
-from ui.stock import stock_view
+from ui.imports import bootstrap_inventory
+from ui.navigation import PAGES, TITLES
 
 
 def main():
     st.set_page_config(page_title="Evergreen", page_icon="🌿", layout="wide")
+    st.markdown(
+        """<style>
+    .stMainBlockContainer {max-width:1240px;padding-top:4rem;padding-bottom:3rem;}
+    [data-testid="stSidebar"] {background:#f1f5f2;}
+    [data-testid="stMetric"] {background:#f5f7f5;border:1px solid #e1e8e2;border-radius:12px;padding:16px;}
+    [data-testid="stMetricValue"] {font-size:1.85rem;}
+    h1 {letter-spacing:-0.03em;}
+    </style>""",
+        unsafe_allow_html=True,
+    )
     store = Store(Path(os.environ.get("EVERGREEN_DB", str(DEFAULT_DB))))
     try:
         bootstrap_inventory(store)
     except (ValueError, OSError) as error:
         st.error(f"Impossible de charger l’inventaire local : {error}")
-    identifier = sidebar(store)
-    st.title("Evergreen · Bâtiments et inventaire")
-    if identifier is None:
-        st.info(
-            "Importe ton CSV dans la barre latérale pour commencer. Aucun inventaire fictif n’est chargé."
-        )
-        return
-    data, models, revision, label = store.load(identifier)
-    context = identifier, revision
-    if st.session_state.get("active_context") != context:
-        for key in list(st.session_state):
-            if key.startswith(("choice_", "goal_", "plan_", "overview_", "map_")):
-                del st.session_state[key]
-        st.session_state.pop("preview", None)
-        st.session_state.pop("uniform_preview", None)
-        st.session_state.pop("block_preview", None)
-        st.session_state.active_context = context
-    st.caption(f"{label} · Version de l’inventaire : {revision}")
-    if data.import_notes:
-        with st.expander("Détails du contrôle de l’import"):
-            for note in data.import_notes:
-                st.caption(note)
-    if data.distance_mode == "geodesic":
-        st.caption("Stock central à Morisset · Préparation des interventions Evergreen")
-        with st.expander("Repères de planification et distances"):
-            st.caption(
-                "Stock central à Morisset · Distances de marche renseignées quand disponibles, sinon à vol d’oiseau, "
-                "sans estimation des déplacements intérieurs. "
-                "Les capacités des salles sont limitées aux postes recensés à l’import."
+    workspaces = store.list_workspaces()
+    ids = [w["id"] for w in workspaces]
+    labels = {w["id"]: w["name"] for w in workspaces}
+    with st.sidebar:
+        st.title("Evergreen")
+        st.caption("Organiser le parc. Suivre les interventions.")
+        if ids:
+            if st.session_state.get("workspace") not in ids:
+                requested = st.query_params.get("workspace")
+                st.session_state.workspace = requested if requested in ids else ids[-1]
+            st.selectbox(
+                "Inventaire actif", ids, format_func=labels.get, key="workspace"
             )
-    if "notice" in st.session_state:
-        st.success(st.session_state.pop("notice"))
-    pages = st.tabs(
-        [
-            "Vue par bâtiment",
-            "Planifier Evergreen",
-            "Lots et historique",
-            "Stock et modèles",
-            "Salles et trajets",
-        ]
-    )
-    with pages[0]:
-        overview(data, models)
-    with pages[1]:
-        planning(store, identifier, data, models, revision)
-    with pages[2]:
-        batches_view(store, identifier, data, revision)
-    with pages[3]:
-        stock_view(store, identifier, data, models, revision)
-    with pages[4]:
-        google_distances(data, store, identifier, revision)
         st.divider()
-        graph = build_graph(data)
-        rooms = sorted(data.rooms)
-        if not rooms:
-            st.info("Aucune salle dans cet inventaire.")
-            return
-        recommendations(data, graph, rooms, label)
+    identifier = st.session_state.get("workspace") if ids else None
+    if identifier:
+        data, models, revision, label = store.load(identifier)
+        previous = st.session_state.get("active_workspace")
+        if previous != identifier:
+            for key in list(st.session_state):
+                if key.startswith(("selected_", "uniform_", "block_", "receipt_")):
+                    del st.session_state[key]
+            st.session_state.active_workspace = identifier
+        context = identifier, revision
+        if st.session_state.get("active_context") != context:
+            for key in list(st.session_state):
+                if key.startswith(("choice_", "goal_", "plan_", "overview_", "map_")):
+                    del st.session_state[key]
+            st.session_state.pop("preview", None)
+            st.session_state.pop("uniform_preview", None)
+            st.session_state.pop("block_preview", None)
+            st.session_state.active_context = context
+        st.caption(f"{label} · Version de l’inventaire : {revision}")
+        if "notice" in st.session_state:
+            st.success(st.session_state.pop("notice"))
+
+    pages = [
+        st.Page(path, title=TITLES[name], url_path=name, default=name == "home")
+        for name, path in PAGES.items()
+    ]
+    page = st.navigation(pages, position="hidden")
+    with st.sidebar:
+        st.caption("PILOTER")
+        for name in ("home", "buildings", "regroup", "lots"):
+            st.page_link(PAGES[name], label=TITLES[name])
+        st.caption("TENIR À JOUR")
+        for name in ("stock", "models", "history", "data", "routes"):
+            st.page_link(PAGES[name], label=TITLES[name])
         st.divider()
-        source = st.selectbox("Départ du trajet", rooms, key="choice_route_source")
-        destination = st.selectbox(
-            "Arrivée du trajet",
-            rooms,
-            index=min(1, len(rooms) - 1),
-            key="choice_route_destination",
+        st.caption(
+            "Données enregistrées sur cet ordinateur. Aucun envoi automatique vers GitHub."
         )
-        show_route(shortest_route(graph, source, destination))
+    if identifier:
+        with st.sidebar:
+            if data.import_notes:
+                with st.expander("Détails du contrôle de l’import"):
+                    for note in data.import_notes:
+                        st.caption(note)
+            if data.distance_mode == "geodesic":
+                st.caption(
+                    "Stock central à Morisset · Préparation des interventions Evergreen"
+                )
+                with st.expander("Repères de planification et distances"):
+                    st.caption(
+                        "Stock central à Morisset · Distances de marche renseignées quand disponibles, sinon à vol d’oiseau, "
+                        "sans estimation des déplacements intérieurs. "
+                        "Les capacités des salles sont limitées aux postes recensés à l’import."
+                    )
+    page.run()
 
 
 if __name__ == "__main__":

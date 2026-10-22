@@ -6,13 +6,18 @@ from core.export import csv_bytes
 from ui.common import operation_rows, refresh, table, transfer_rows, transport_summary
 
 
-def batches_view(store, identifier, data, revision):
+def batches_view(store, identifier, data, revision, batch_id=None):
     st.subheader("Lots de déplacements")
     batches = store.batches(identifier)
     if not batches:
         st.info("Aucun lot enregistré pour cet inventaire.")
     for batch in batches:
-        with st.expander(f"{batch['name']} · {batch['status']} · {batch['id'][:8]}"):
+        if batch_id and batch["id"] != batch_id:
+            continue
+        with st.expander(
+            f"{batch['name']} · {batch['status']} · {batch['id'][:8]}",
+            expanded=bool(batch_id),
+        ):
             plan = batch["plan"]
             table(transport_summary(plan, data))
             table(operation_rows(plan))
@@ -77,6 +82,8 @@ def batches_view(store, identifier, data, revision):
                     refresh(
                         "Lot annulé. Les déplacements déjà confirmés sont conservés."
                     )
+    if batch_id:
+        return
     st.subheader("Historique des mises à jour")
     history = store.history(identifier)
     table(

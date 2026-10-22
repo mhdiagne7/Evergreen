@@ -50,6 +50,10 @@ def overview(data, models):
     building = st.selectbox(
         "Voir les salles du bâtiment", buildings, key="overview_building"
     )
+    building_detail(data, building)
+
+
+def building_detail(data, building):
     st.subheader(f"{building} · Modèles présents")
     counts = +building_models(data, building)
     leaders = dominant_models(data, building)

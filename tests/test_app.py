@@ -27,9 +27,10 @@ def test_dashboard_and_import_validation(application):
     app, store, key = application
     app.run()
     assert not app.exception
-    assert app.title[0].value == "Evergreen · Bâtiments et inventaire"
-    assert app.metric[2].value == "6"
+    assert app.main.title[0].value == "Votre parc, en un coup d’œil"
+    assert app.metric[1].value == "6"
     assert not any(workspace["id"] == "demo" for workspace in store.list_workspaces())
+    app.switch_page("ui/pages/data.py").run()
     app.button(key="import_apply").click().run()
     assert any("Sélectionne un fichier" in error.value for error in app.error)
     assert not app.exception
@@ -38,7 +39,7 @@ def test_dashboard_and_import_validation(application):
 def test_plan_save_confirm_and_restart(application):
     app, store, key = application
     app.run()
-    app.radio(key="planning_mode").set_value("Objectifs manuels").run()
+    app.switch_page("ui/pages/manual.py").run()
     app.selectbox(key="plan_building").select("CBY").run()
     app.multiselect(key="plan_models").set_value(["New"]).run()
     app.number_input(key="goal_CBY_New").set_value(2).run()
@@ -47,6 +48,8 @@ def test_plan_save_confirm_and_restart(application):
     app.button(key="save_batch").click().run()
     assert not app.exception
     batch = store.batches(key)[0]
+    app.session_state.selected_lot = batch["id"]
+    app.switch_page("ui/pages/lot.py").run()
     app.multiselect(key="complete_" + batch["id"]).set_value([0])
     app.text_input(key="note_" + batch["id"]).set_value("Test de réalisation")
     next(
@@ -69,6 +72,7 @@ def test_plan_save_confirm_and_restart(application):
 def test_receipt_needs_no_origin_and_persists(application):
     app, store, key = application
     app.run()
+    app.switch_page("ui/pages/receipts.py").run()
     app.selectbox(key="receipt_model").select("New")
     app.number_input(key="receipt_quantity").set_value(3)
     next(
@@ -97,6 +101,7 @@ def test_new_database_has_no_demo(tmp_path, monkeypatch):
 def test_generation_year_can_be_saved_in_interface(application):
     app, store, key = application
     app.run()
+    app.switch_page("ui/pages/models.py").run()
     app.selectbox(key="model_to_date").select("New").run()
     app.number_input(key="model_year_New").set_value(2025)
     next(
@@ -134,7 +139,7 @@ def test_default_homogeneity_can_save_a_campus_cycle(tmp_path, monkeypatch):
     identifier = store.create_workspace("Campus", campus())
     app = AppTest.from_file(str(APP)).run()
     assert not app.exception
-    assert app.radio(key="planning_mode").value == "Regrouper par modèle dominant"
+    app.switch_page("ui/pages/suggestions.py").run()
     app.button(key="uniform_calculate").click().run()
     assert not app.exception
     app.button(key="uniform_save").click().run()
@@ -151,13 +156,14 @@ def test_google_routes_are_links_without_api_fields(application):
     app.run()
     assert not app.exception
     assert not any("API" in item.label for item in app.text_input)
+    app.switch_page("ui/pages/routes.py").run()
     assert any("Aucune clé API nécessaire" in item.value for item in app.caption)
 
 
 def test_block_planning_can_be_selected_and_requires_two_buildings(application):
     app, _, _ = application
     app.run()
-    app.radio(key="planning_mode").set_value("Regrouper par blocs proches").run()
+    app.switch_page("ui/pages/blocks.py").run()
     assert not app.exception
     app.multiselect(key="block_suggestions").set_value([]).run()
     app.multiselect(key="block_manual").set_value(["CBY"]).run()
@@ -169,6 +175,7 @@ def test_block_planning_can_be_selected_and_requires_two_buildings(application):
 def test_manual_walking_distance_requires_confirmation(application):
     app, store, key = application
     app.run()
+    app.switch_page("ui/pages/routes.py").run()
     app.selectbox(key="google_from").select("CBY").run()
     app.selectbox(key="google_to").select("FTX").run()
     app.number_input(key="walking_metres_CBY_FTX").set_value(800)
@@ -186,3 +193,50 @@ def test_manual_walking_distance_requires_confirmation(application):
     ).click().run()
     assert not app.exception
     assert store.load(key)[0].walking_routes["CBY", "FTX"]["distance_m"] == 800
+
+
+def test_every_page_and_building_navigation(application):
+    from ui.navigation import PAGES
+
+    app, store, identifier = application
+    app.run()
+    for name, path in PAGES.items():
+        app.switch_page(path).run()
+        assert not app.exception, name
+    app.switch_page(PAGES["buildings"]).run()
+    app.button(key="building_CBY").click().run()
+    assert app.session_state.selected_building == "CBY"
+    app.switch_page(PAGES["building"]).run()
+    assert app.main.title[0].value == "CBY"
+    assert not app.exception
+
+
+def test_stale_lot_cannot_be_confirmed_in_ui(application):
+    from core.buildings import plan_building
+
+    app, store, identifier = application
+    data, _, revision, _ = store.load(identifier)
+    plan = plan_building(data, "CBY", {"New": 2}, CENTRAL_STOCK)
+    batch = store.save_batch(identifier, revision, "Test", plan)
+    store.receive(identifier, CENTRAL_STOCK, "New", 1, revision)
+    app.run()
+    app.session_state.selected_lot = batch
+    app.switch_page("ui/pages/lot.py").run()
+    assert not app.exception
+    assert any("plus ancien" in info.value for info in app.info)
+    assert not any(
+        button.label == "Mettre à jour l'inventaire" for button in app.button
+    )
+
+
+def test_backup_available_without_central_stock(application):
+    from sample_data import routing_data
+
+    app, store, _ = application
+    key = store.create_workspace("Réseau importé sans stock MRT", routing_data())
+    app.run()
+    app.selectbox(key="workspace").select(key).run()
+    app.switch_page("ui/pages/data.py").run()
+    app.button(key="prepare_backup").click().run()
+    assert not app.exception
+    assert app.session_state.backup_bytes.startswith(b"SQLite format 3")

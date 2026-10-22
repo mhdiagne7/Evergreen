@@ -185,7 +185,7 @@ def models_view(store, identifier, data, models, revision):
                 st.error(str(error))
 
 
-def stock_view(store, identifier, data, models, revision):
+def stock_view(store, identifier, data, models, revision, section="available"):
     st.subheader("Morisset · Stock central")
     reserves = sorted(
         room
@@ -215,18 +215,10 @@ def stock_view(store, identifier, data, models, revision):
     first.metric("Neufs disponibles", sum(row["Stock neuf"] for row in rows))
     second.metric("Retours disponibles", sum(row["Retours de salles"] for row in rows))
     third.metric("Modèles en stock", sum(row["Total disponible"] > 0 for row in rows))
-    receive_tab, available_tab, model_tab, settings_tab = st.tabs(
-        [
-            "Recevoir du stock",
-            "Quantités disponibles",
-            "Formats et modèles",
-            "Sauvegardes et réglages",
-        ]
-    )
-    with receive_tab:
+    if section == "receive":
         with st.container(border=True):
             receive_form(store, identifier, data, models, revision)
-    with available_tab:
+    if section == "available":
         show_zero = st.checkbox("Afficher les modèles à zéro", key="stock_zero")
         available = (
             rows if show_zero else [row for row in rows if row["Total disponible"]]
@@ -237,10 +229,10 @@ def stock_view(store, identifier, data, models, revision):
             st.info(
                 "Le stock central est vide. Enregistre une réception quand le matériel est arrivé."
             )
-    with model_tab:
+    if section == "models":
         if models:
             models_view(store, identifier, data, models, revision)
-    with settings_tab:
+    if section == "settings":
         info = data.rooms[room]
         with st.expander("Capacité du stock central"):
             with st.form("stock_capacity"):
@@ -265,24 +257,27 @@ def stock_view(store, identifier, data, models, revision):
                     refresh("Capacité du stock mise à jour.")
                 except ValueError as error:
                     st.error(str(error))
-        current = [
-            {"room_id": location, "model": model, "quantity": quantity}
-            for (location, model), quantity in sorted(data.inventory.items())
-            if quantity
-        ]
+
+
+def backup_view(store, data):
+    current = [
+        {"room_id": location, "model": model, "quantity": quantity}
+        for (location, model), quantity in sorted(data.inventory.items())
+        if quantity
+    ]
+    st.download_button(
+        "Exporter l'inventaire actuel",
+        csv_bytes(current) if current else b"room_id,model,quantity\n",
+        "inventory.csv",
+        "text/csv",
+    )
+    if st.button("Préparer une sauvegarde complète", key="prepare_backup"):
+        st.session_state.backup_bytes = store.backup()
+    if "backup_bytes" in st.session_state:
         st.download_button(
-            "Exporter l'inventaire actuel",
-            csv_bytes(current) if current else b"room_id,model,quantity\n",
-            "inventory.csv",
-            "text/csv",
+            "Télécharger la sauvegarde locale",
+            st.session_state.backup_bytes,
+            "evergreen-sauvegarde.sqlite3",
+            "application/octet-stream",
         )
-        if st.button("Préparer une sauvegarde complète", key="prepare_backup"):
-            st.session_state.backup_bytes = store.backup()
-        if "backup_bytes" in st.session_state:
-            st.download_button(
-                "Télécharger la sauvegarde locale",
-                st.session_state.backup_bytes,
-                "evergreen-sauvegarde.sqlite3",
-                "application/octet-stream",
-            )
-        st.caption("Les inventaires et leur historique restent sur cet ordinateur.")
+    st.caption("Les inventaires et leur historique restent sur cet ordinateur.")
