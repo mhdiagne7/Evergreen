@@ -32,6 +32,12 @@ Les tests utilisent des inventaires temporaires synthétiques et couvrent les fi
 
 Après création du groupe, **Une destination par ordinateur** permet de conserver chaque poste sur place, de le déplacer, ou de choisir un poste de la destination à ramener en échange. Les salles du même bâtiment apparaissent d’abord, puis les bâtiments par proximité géographique ; cette distance est à vol d’oiseau et ne mesure pas les couloirs.
 
-La liste récapitule les identifiants locaux (ou numéros réels renseignés), modèles, salles de départ et destinations, avec export CSV. **Vérifier les déplacements et échanges** contrôle les capacités, les modèles autorisés, la disponibilité et les doublons. Un échange entre deux salles pleines est une opération indivisible : les deux postes sont retirés puis réinstallés. Il ne passe pas par le stock central et doit être confirmé entièrement après réalisation physique.
+La liste récapitule les hostnames, modèles, salles de départ et destinations, avec export CSV. **Vérifier les déplacements et échanges** contrôle les capacités, les modèles autorisés, la disponibilité et les doublons. Un échange entre deux salles pleines est une opération indivisible : les deux postes sont retirés puis réinstallés. Il ne passe pas par le stock central et doit être confirmé entièrement après réalisation physique.
 
 Un poste ne peut participer à deux opérations dans le même lot. Si deux postes du groupe s’échangent, configurer l’échange sur l’un et laisser l’autre sur sa salle actuelle dans le formulaire. Les déplacements simples sont validés dans l’ordre affiché. Préparer puis confirmer la liste pour enregistrer le lot ; ouvrir ensuite **Lots de déplacements** pour confirmer les opérations réellement effectuées. Le mode **Une destination pour tout le groupe** reste disponible.
+
+## Hostnames
+
+Les tableaux et choix d’ordinateurs affichent le **Hostname** plutôt que la clé interne Evergreen. La colonne de numéro d’inventaire réel est retirée. Un hostname non associé est affiché « Non renseigné », sans inventer de nom.
+
+`GroupStore.import_hostnames` accepte un CSV `Hostname,Model` et rapproche les noms par salle et modèle exact. Les doublons sont refusés et les correspondances ambiguës sont signalées, sans changer les quantités ni les emplacements. Le choix optionnel de privilégier le nom sans suffixe doit être confirmé avant usage. Les hostnames sont conservés dans la base SQLite et suivent le poste lors de ses déplacements ; le code salle contenu dans le nom n’est pas réécrit. Les clés internes restent stables et invisibles dans les tableaux utilisateurs. Une sauvegarde SQLite conserve ces associations.
