@@ -5,25 +5,14 @@ from collections import Counter
 import streamlit as st
 
 from core.asset_groups import (
-    CONDITIONS,
-    PRIORITIES,
     GroupStore,
-    automatic_groups,
     filter_assets,
 )
 from core.export import csv_bytes
 from ui.common import operation_rows, refresh, table, transfer_rows
 from ui.navigation import PAGES, go
 
-FIELDS = {
-    "Catégorie": "category",
-    "Bâtiment": "building",
-    "Étage": "floor",
-    "Salle": "room",
-    "Modèle": "model",
-    "État": "condition",
-    "Priorité": "priority",
-}
+FIELDS = {"Bâtiment": "building", "Salle": "room", "Modèle": "model"}
 
 
 def asset_label(asset):
@@ -36,13 +25,8 @@ def asset_rows(assets, origins=None):
             "Identifiant Evergreen": a["id"],
             "Numéro d’inventaire réel": a["physical_id"] or "Non renseigné",
             "Modèle": a["model"],
-            "Catégorie": a["category"],
             "Bâtiment": a["building"],
-            "Étage": a["floor"] or "Non renseigné",
             "Salle actuelle": a["room"],
-            "État": a["condition"],
-            "Priorité": a["priority"],
-            "Disponible": bool(a["available"]) and bool(a["active"]),
             **(
                 {"Salle à la création": origins.get(a["id"])}
                 if origins is not None
@@ -66,24 +50,24 @@ def filters_view(assets, prefix):
                 key=prefix + field,
             )
             filters[field] = selected
-        available = st.checkbox(
-            "Uniquement les ordinateurs disponibles",
-            value=True,
-            key=prefix + "available",
-        )
-        classes = st.checkbox(
-            "Uniquement les postes installés en salle",
-            value=True,
-            key=prefix + "classes",
-        )
     found = filter_assets(assets, filters)
     return [
         a
         for a in found
-        if a["active"]
-        and (not available or a["available"])
-        and (not classes or a["room_type"] == "classroom")
+        if a["active"] and a["available"] and a["room_type"] == "classroom"
     ]
+
+
+@st.dialog("Sélectionner un bâtiment sur la carte", width="large")
+def building_map_dialog(data, models):
+    from map_view import campus_map
+
+    selected = campus_map(data, models, key_prefix="ag_picker")
+    if selected:
+        st.session_state.ag_map_building = selected
+        st.rerun()
+    if st.button("Fermer la carte", key="ag_close_map"):
+        st.rerun()
 
 
 def selection_table(assets, key, default=()):
@@ -93,9 +77,6 @@ def selection_table(assets, key, default=()):
             "ID": a["id"],
             "Salle": a["room"],
             "Modèle": a["model"],
-            "Catégorie": a["category"],
-            "Étage": a["floor"] or "Non renseigné",
-            "Disponible": bool(a["available"]),
         }
         for a in assets
     ]
@@ -118,90 +99,46 @@ def selection_table(assets, key, default=()):
 
 def create_view(store, workspace, data, revision, groups_store, assets):
     with st.container(border=True):
-        st.subheader("Créer un groupe")
-        mode = st.radio(
-            "Mode de création",
-            ["Manuel", "Automatique"],
-            horizontal=True,
-            key="ag_mode",
-        )
-        st.caption(
-            "Les identifiants Evergreen sont locaux. Les catégories, étages, états et priorités restent non renseignés tant qu’ils ne sont pas vérifiés."
-        )
+        if st.button(
+            "Sélectionner un bâtiment sur la carte",
+            type="primary",
+            width="stretch",
+            key="ag_open_map",
+        ):
+            building_map_dialog(data, sorted({a["model"] for a in assets}))
+        building = st.session_state.get("ag_map_building")
+        if building:
+            st.write("Bâtiment sélectionné : **" + building + "**")
+            if st.button("Effacer la sélection sur la carte", key="ag_clear_map"):
+                st.session_state.pop("ag_map_building", None)
+                st.rerun()
         found = filters_view(assets, "ag_filter_")
-        source_map = st.checkbox(
-            "Sélectionner un bâtiment sur la carte", key="ag_use_map"
-        )
-        if source_map:
-            from map_view import campus_map
-
-            selected = campus_map(data, sorted({a["model"] for a in assets}))
-            if selected:
-                st.session_state.ag_map_building = selected
-            building = st.session_state.get("ag_map_building")
-            if building:
-                st.info("Sélection sur la carte : " + building)
-                found = [a for a in found if a["building"] == building]
-                if st.button("Effacer la sélection sur la carte", key="ag_clear_map"):
-                    st.session_state.pop("ag_map_building", None)
-                    st.rerun()
+        if building:
+            found = [a for a in found if a["building"] == building]
         st.caption(f"{len(found)} ordinateur(s) correspondent aux filtres.")
         chosen = []
         drafts = []
         title = st.text_input(
-            "Nom du groupe" if mode == "Manuel" else "Préfixe des groupes",
+            "Nom du groupe",
             value="Nouveau groupe",
             key="ag_create_name",
         )
         description = st.text_area("Description", key="ag_create_description")
         by_id = {a["id"]: a for a in assets}
-        if mode == "Manuel":
-            all_selected = st.checkbox(
-                "Sélectionner tous les résultats disponibles", key="ag_select_all"
-            )
-            eligible = [a for a in found if a["available"]]
-            chosen = selection_table(
-                eligible,
-                "ag_selection_"
-                + str(revision)
-                + "_"
-                + str(tuple(a["id"] for a in eligible))
-                + str(all_selected),
-                [a["id"] for a in eligible] if all_selected else [],
-            )
-            drafts = [{"name": title, "description": description, "members": chosen}]
-        else:
-            fields = st.multiselect(
-                "Séparer les groupes selon",
-                list(FIELDS),
-                default=["Bâtiment", "Étage", "Modèle"],
-                key="ag_auto_fields",
-            )
-            maximum = int(
-                st.number_input(
-                    "Nombre maximal d’ordinateurs par groupe",
-                    1,
-                    500,
-                    10,
-                    key="ag_maximum",
-                )
-            )
-            partitions = automatic_groups(
-                found, [FIELDS[field] for field in fields], maximum
-            )
-            drafts = [
-                {
-                    "name": f"{title} {i + 1}",
-                    "description": description,
-                    "members": members,
-                }
-                for i, members in enumerate(partitions)
-            ]
-            chosen = [item for partition in partitions for item in partition]
-            st.caption(
-                "Les mêmes salles et étages renseignés sont privilégiés, puis les bâtiments voisins. La proximité ne provoque aucun déplacement."
-            )
-        signature = (workspace, revision, mode, title, description, str(drafts))
+        all_selected = st.checkbox(
+            "Sélectionner tous les résultats", key="ag_select_all"
+        )
+        chosen = selection_table(
+            found,
+            "ag_selection_"
+            + str(revision)
+            + "_"
+            + str(tuple(a["id"] for a in found))
+            + str(all_selected),
+            [a["id"] for a in found] if all_selected else [],
+        )
+        drafts = [{"name": title, "description": description, "members": chosen}]
+        signature = (workspace, revision, title, description, str(drafts))
         if st.button("Prévisualiser le regroupement", key="ag_preview"):
             if not chosen or not title.strip():
                 st.error(
@@ -230,9 +167,7 @@ def create_view(store, workspace, data, revision, groups_store, assets):
             with st.expander("Ordinateurs sélectionnés"):
                 table(asset_rows([by_id[item] for item in chosen]))
             if st.button(
-                "Enregistrer le groupe"
-                if mode == "Manuel"
-                else "Enregistrer les groupes",
+                "Enregistrer le groupe",
                 type="primary",
                 key="ag_save",
             ):
@@ -460,72 +395,13 @@ def group_view(store, workspace, data, revision, groups_store, assets, group):
                 st.error(str(error))
 
 
-def metadata_view(groups_store, workspace, revision, assets):
-    with st.expander("Renseigner les caractéristiques manquantes"):
-        st.caption(
-            "Les catégories sont un classement interne à définir par l’équipe. Aucune note n’est déduite du nom commercial. L’étage renseigné concerne toute la salle."
-        )
-        active = [a for a in assets if a["active"]]
-        if not active:
-            return
-        ids = [a["id"] for a in active]
-        by_id = {a["id"]: a for a in active}
-        selected = st.selectbox(
-            "Ordinateur à renseigner",
-            ids,
-            format_func=lambda item: asset_label(by_id[item]),
-            key="ag_metadata_asset",
-        )
-        asset = by_id[selected]
-        with st.form("ag_metadata_" + selected + "_" + str(revision)):
-            physical = st.text_input(
-                "Numéro d’inventaire réel (si connu)", asset["physical_id"]
-            )
-            category = st.number_input(
-                "Catégorie interne (non renseignée par défaut)",
-                min_value=1,
-                max_value=99,
-                value=asset["category"],
-                step=1,
-            )
-            floor = st.text_input("Étage de la salle", asset["floor"])
-            condition = st.selectbox(
-                "État du matériel",
-                CONDITIONS,
-                index=CONDITIONS.index(asset["condition"]),
-            )
-            priority = st.selectbox(
-                "Priorité de remplacement",
-                PRIORITIES,
-                index=PRIORITIES.index(asset["priority"]),
-            )
-            available = st.checkbox(
-                "Ordinateur disponible", value=bool(asset["available"])
-            )
-            submit = st.form_submit_button("Enregistrer les caractéristiques")
-        if submit:
-            try:
-                groups_store.metadata(
-                    workspace,
-                    selected,
-                    revision,
-                    physical,
-                    category,
-                    condition,
-                    priority,
-                    available,
-                    floor,
-                )
-                refresh("Caractéristiques enregistrées ; quantités inchangées.")
-            except ValueError as error:
-                st.error(str(error))
-
-
 def groups_view(store, workspace, data, models, revision):
     groups_store = GroupStore(store)
     assets = groups_store.assets(workspace)
     groups = groups_store.groups(workspace)
-    if st.button("Créer un groupe", type="primary", key="ag_create"):
+    if not st.session_state.get("ag_creating") and st.button(
+        "Nouveau groupe", type="primary", key="ag_create"
+    ):
         st.session_state.ag_creating = True
         st.session_state.pop("ag_selected", None)
     if st.session_state.get("ag_creating"):
@@ -547,10 +423,7 @@ def groups_view(store, workspace, data, models, revision):
             store, workspace, data, revision, groups_store, assets, by_id[selected]
         )
     else:
-        st.info(
-            "Aucun groupe enregistré. Crée un groupe manuel ou automatique pour commencer."
-        )
-    metadata_view(groups_store, workspace, revision, assets)
+        st.info("Aucun groupe enregistré. Sélectionne des ordinateurs pour commencer.")
     with st.expander("Renouvellement et uniformisation des modèles"):
         st.page_link(PAGES["suggestions"], label="Regrouper par modèle dominant →")
         st.page_link(PAGES["blocks"], label="Regrouper les blocs proches →")
