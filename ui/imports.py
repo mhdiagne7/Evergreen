@@ -29,6 +29,19 @@ def bootstrap_inventory(store):
             "Inventaire des ordinateurs · " + path.stem, data, identifier
         )
 
+    # Correction confirmée : -1 à -4 désignent des postes dans trois salles LEE.
+    from core.asset_groups import GroupStore
+    from core.owned_import import canonical_owned_room
+
+    for workspace in store.list_workspaces():
+        existing_data = store.load(workspace["id"])[0]
+        if any(canonical_owned_room(room) != room for room in existing_data.rooms):
+            groups = GroupStore(store)
+            groups.consolidate_confirmed_lee_rooms(workspace["id"])
+            hostnames = DEFAULT_DB.parent / "computer_hostnames.csv"
+            if hostnames.is_file():
+                groups.import_hostnames(workspace["id"], hostnames.read_bytes())
+
 
 def import_form(store):
     with st.expander("Importer un inventaire", expanded=not store.list_workspaces()):
