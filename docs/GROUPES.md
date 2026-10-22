@@ -1,8 +1,8 @@
 # Groupes d’ordinateurs
 
-Dans **Regroupements**, choisir **Créer un groupe**, puis le mode manuel ou automatique. Les filtres combinent catégorie, bâtiment, étage, salle, modèle, état et priorité. La carte permet de sélectionner un bâtiment avant de cocher ses postes. Une prévisualisation précède l’enregistrement.
+Dans **Regroupements**, choisir **Nouveau groupe**. Le bouton principal **Sélectionner un bâtiment sur la carte** ouvre une grande fenêtre superposée. Cliquer sur un bâtiment revient au formulaire avec ses postes. Les filtres Bâtiment, Salle et Modèle permettent d’affiner la sélection ; cocher les ordinateurs à regrouper, nommer le groupe puis le prévisualiser avant enregistrement.
 
-Le mode automatique partitionne les résultats selon les critères choisis et la taille maximale. Une heuristique privilégie la même salle, puis un étage renseigné du même bâtiment, puis le même bâtiment et la proximité géographique. Elle ne garantit pas un optimum ni une distance de marche mesurée. Les étages inconnus ne sont pas déduits des numéros de salle.
+Le formulaire affiche les postes actifs et disponibles installés en salle. Le mode automatique et les filtres catégorie, étage, état et priorité sont retirés de cette interface. Le moteur automatique reste disponible dans le code pour les usages existants, sans action automatique dans cette page.
 
 Chaque groupe conserve son nom, sa description, ses membres et leurs salles d’origine. Son détail affiche les emplacements actuels, une carte filtrée et un export. Les groupes peuvent être renommés, modifiés ou supprimés. Plusieurs groupes peuvent contenir le même poste : une alerte le signale, sans réservation de stock. Un groupe lié à un déplacement actif doit être annulé avant de modifier ses membres.
 
@@ -10,7 +10,7 @@ Chaque groupe conserve son nom, sa description, ses membres et leurs salles d’
 
 Le CSV contient des quantités par salle et modèle, pas des numéros de série individuels. Evergreen crée donc des identifiants locaux stables par unité. Ils ne certifient pas l’identité physique du matériel : renseigner le numéro réel dans les caractéristiques pour établir cette correspondance. Un numéro réel actif doit être unique dans le même inventaire.
 
-Les catégories sont des entiers facultatifs de 1 à 99. Aucune signification officielle n’est présumée : l’équipe doit définir ses critères avant de les attribuer. Ni l’ancienneté, ni la performance, ni l’état ne sont inférés du modèle. Étage, catégorie, numéro réel, état et priorité se renseignent dans les caractéristiques. Un poste hors service devient indisponible.
+Les catégories sont des entiers facultatifs de 1 à 99. Aucune signification officielle n’est présumée : l’équipe doit définir ses critères avant de les attribuer. Ni l’ancienneté, ni la performance, ni l’état ne sont inférés du modèle. Les anciennes caractéristiques restent conservées dans la base ; leur panneau de saisie est retiré de cette page simplifiée. Un poste déjà marqué hors service reste indisponible.
 
 ## Déplacements
 
