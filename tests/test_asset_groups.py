@@ -249,3 +249,45 @@ def test_multi_room_cycle_keeps_all_registered_identities(tmp_path):
     assert Counter((a["room"], a["model"]) for a in after if a["active"]) == Counter(
         {key: value for key, value in store.load(w)[0].inventory.items() if value}
     )
+
+
+def test_individual_swap_full_rooms_preserves_exact_ids_and_counts(campus):
+    store, w, groups = campus
+    assets = groups.assets(w)
+    first = next(a for a in assets if a["room"] == "CBY-101")
+    second = next(a for a in assets if a["room"] == "CBY-102")
+    group = save_group(groups, w, [first["id"]])
+    before, _, revision, _ = store.load(w)
+    assignments = {first["id"]: {"destination": second["room"], "swap": second["id"]}}
+    plan = groups.plan(w, group, 0, revision, assignments=assignments)
+    assert len(plan["groups"]) == 1 and len(plan["groups"][0]["transfers"]) == 2
+    batch = groups.plan(w, group, 0, revision, assignments=assignments, save=True)
+    assert store.load(w)[0] == before
+    store.confirm_batch(w, batch, [0], "Échange réalisé")
+    after = {a["id"]: a for a in groups.assets(w)}
+    assert after[first["id"]]["room"] == second["room"]
+    assert after[second["id"]]["room"] == first["room"]
+    assert sum(store.load(w)[0].inventory.values()) == sum(before.inventory.values())
+    assert set(after) == {a["id"] for a in assets}
+
+
+def test_individual_swap_rejects_duplicate_partner_and_simple_full_destination(campus):
+    store, w, groups = campus
+    assets = groups.assets(w)
+    first = [a for a in assets if a["room"] == "CBY-101"]
+    second = next(a for a in assets if a["room"] == "CBY-102")
+    group = save_group(groups, w, [a["id"] for a in first])
+    with pytest.raises(ValueError, match="Place insuffisante"):
+        groups.plan(
+            w,
+            group,
+            0,
+            0,
+            assignments={first[0]["id"]: {"destination": second["room"]}},
+        )
+    assignments = {
+        a["id"]: {"destination": second["room"], "swap": second["id"]} for a in first
+    }
+    with pytest.raises(ValueError, match="deux opérations"):
+        groups.plan(w, group, 0, 0, assignments=assignments)
+    assert not store.batches(w)

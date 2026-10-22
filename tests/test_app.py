@@ -344,6 +344,7 @@ def test_groups_manual_preview_save_edit_and_plan_do_not_move_inventory(applicat
     assert len(groups) == 1 and len(groups[0]["members"]) == 2
     assert store.load(workspace)[0] == before
     assert app.metric[0].value == "2"
+    app.radio(key="ag_move_mode").set_value("Une destination pour tout le groupe").run()
     app.selectbox(key="ag_destination_" + groups[0]["id"]).select(CENTRAL_STOCK).run()
     app.button(key="ag_plan_" + groups[0]["id"]).click().run()
     assert not app.exception
@@ -407,3 +408,34 @@ if "ag_map_buildings" not in st.session_state:
     app.button(key="ag_confirm_map").click().run()
     assert not app.exception
     assert app.session_state["ag_map_buildings"] == ["CBY", "MRT"]
+
+
+def test_group_individual_swap_preview_save_and_list(application):
+    from core.asset_groups import GroupStore
+
+    app, store, workspace = application
+    app.run().switch_page("ui/pages/regroup.py").run()
+    app.button(key="ag_create").click().run()
+    app.session_state["ag_map_buildings"] = ["CBY"]
+    app.run()
+    app.button(key="ag_preview").click().run()
+    app.button(key="ag_save").click().run()
+    groups = GroupStore(store)
+    group = groups.groups(workspace)[0]
+    asset = group["members"][0]
+    partner = next(
+        a
+        for a in groups.assets(workspace)
+        if a["room"] == "FTX-147" and a["model"] == "Other"
+    )
+    app.selectbox(key="ag_to_" + asset).select("FTX-147").run()
+    app.selectbox(key="ag_swap_" + asset).select(partner["id"]).run()
+    before = store.load(workspace)[0]
+    app.button(key="ag_individual_preview").click().run()
+    assert not app.exception
+    assert app.button(key="ag_individual_save").disabled
+    app.checkbox(key="ag_individual_confirm").check().run()
+    app.button(key="ag_individual_save").click().run()
+    assert not app.exception
+    assert groups.groups(workspace)[0]["status"] == "Planifié"
+    assert store.load(workspace)[0] == before
