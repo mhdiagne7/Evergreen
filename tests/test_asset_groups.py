@@ -1,0 +1,251 @@
+from collections import Counter
+from copy import deepcopy
+
+import pytest
+
+from core.asset_groups import GroupStore, automatic_groups, filter_assets
+from core.buildings import Transfer
+from core.campus import CENTRAL_STOCK
+from core.owned_import import import_owned_computers
+from core.store import Store
+
+
+@pytest.fixture
+def campus(tmp_path):
+    store = Store(tmp_path / "groups.sqlite3")
+    data = import_owned_computers(
+        b"room_id,model,quantity\nCBY-101,X,2\nCBY-102,Y,1\nBRS-1,X,1\n"
+    )
+    workspace = store.create_workspace("Campus", data)
+    groups = GroupStore(store)
+    return store, workspace, groups
+
+
+def save_group(groups, workspace, members, name="Groupe"):
+    return groups.save_many(
+        workspace, 0, [{"name": name, "description": "Test", "members": members}]
+    )[0]
+
+
+def test_local_identity_is_unique_stable_and_never_invents_physical_serial(campus):
+    store, w, groups = campus
+    assets = groups.assets(w)
+    assert len(assets) == 4
+    assert len({a["id"] for a in assets}) == 4
+    assert all(
+        a["physical_id"] == "" and a["category"] is None and a["floor"] == ""
+        for a in assets
+    )
+    assert assets == GroupStore(Store(store.path)).assets(w)
+    assert store.load(w)[2] == 0
+
+
+def test_manual_crud_preserves_inventory_and_supports_overlapping_members(campus):
+    store, w, groups = campus
+    before = store.load(w)
+    assets = groups.assets(w)
+    ids = [a["id"] for a in assets]
+    one = save_group(groups, w, ids[:2])
+    two = save_group(groups, w, ids[:1], "Autre groupe")
+    groups.update(w, one, 0, "Renommé", "Description", ids[1:])
+    row = next(g for g in groups.groups(w) if g["id"] == one)
+    assert row["name"] == "Renommé" and row["status"] == "Brouillon"
+    assert row["members"] == ids[1:]
+    groups.delete(w, one, 1)
+    assert len(groups.groups(w)) == 1
+    assert groups.groups(w)[0]["id"] == two
+    assert store.load(w) == before
+
+
+@pytest.mark.parametrize("members_kind", ["empty", "duplicate", "unknown"])
+def test_invalid_groups_are_rejected_atomically(campus, members_kind):
+    _, w, groups = campus
+    asset = groups.assets(w)[0]["id"]
+    members = {"empty": [], "duplicate": [asset, asset], "unknown": ["absent"]}[
+        members_kind
+    ]
+    with pytest.raises(ValueError):
+        groups.save_many(
+            w,
+            0,
+            [
+                {"name": "Valid", "members": [asset]},
+                {"name": "Invalid", "members": members},
+            ],
+        )
+    assert not groups.groups(w)
+
+
+def test_metadata_and_floor_are_explicit_persistent_and_physical_ids_unique(campus):
+    store, w, groups = campus
+    assets = [a for a in groups.assets(w) if a["room"] == "CBY-101"]
+    groups.metadata(
+        w, assets[0]["id"], 0, "ASSET-001", 5, "À remplacer", "Urgente", True, "Étage 1"
+    )
+    updated = {a["id"]: a for a in groups.assets(w)}
+    assert updated[assets[0]["id"]]["category"] == 5
+    assert updated[assets[1]["id"]]["floor"] == "Étage 1"
+    with pytest.raises(ValueError, match="déjà associé"):
+        groups.metadata(
+            w, assets[1]["id"], 1, "ASSET-001", 1, "Bon", "Normale", True, "Étage 1"
+        )
+    assert store.load(w)[2] == 1
+    assert (
+        len(filter_assets(groups.assets(w), {"category": [5], "building": ["CBY"]}))
+        == 1
+    )
+
+
+def test_automatic_groups_respect_combined_keys_maximum_and_availability(campus):
+    _, w, groups = campus
+    assets = groups.assets(w)
+    assets[0]["available"] = False
+    buckets = automatic_groups(assets, ["building", "model"], 2)
+    by_id = {a["id"]: a for a in assets}
+    flattened = [item for b in buckets for item in b]
+    assert len(flattened) == 3 and len(set(flattened)) == 3
+    assert all(len(b) <= 2 for b in buckets)
+    assert all(
+        len({(by_id[item]["building"], by_id[item]["model"]) for item in b}) == 1
+        for b in buckets
+    )
+    assert automatic_groups([], [], 5) == []
+    for maximum in [0, True, 501]:
+        with pytest.raises(ValueError):
+            automatic_groups(assets, [], maximum)
+
+
+def test_plan_confirmation_tracks_exact_units_and_status_without_early_movement(campus):
+    store, w, groups = campus
+    assets = groups.assets(w)
+    members = [a["id"] for a in assets if a["model"] == "X"]
+    group = save_group(groups, w, members)
+    before = deepcopy(store.load(w)[0])
+    plan = groups.plan(w, group, 0, 0, CENTRAL_STOCK)
+    assert len(plan["groups"]) == 3
+    assert store.load(w)[0] == before
+    batch = groups.plan(w, group, 0, 0, CENTRAL_STOCK, save=True)
+    assert groups.groups(w)[0]["status"] == "Planifié"
+    assert store.load(w)[0] == before
+    with pytest.raises(ValueError, match="lot actif"):
+        groups.delete(w, group, 1)
+    store.confirm_batch(w, batch, [0], "Premier ordinateur déplacé")
+    assert groups.groups(w)[0]["status"] == "En cours"
+    moved_id = plan["groups"][0]["asset_ids"][0]
+    current = {a["id"]: a for a in groups.assets(w)}
+    assert current[moved_id]["room"] == CENTRAL_STOCK
+    assert current[moved_id]["kind"] == "returned"
+    store.confirm_batch(w, batch, [1, 2], "Suite du groupe déplacée")
+    assert groups.groups(w)[0]["status"] == "Terminé"
+    assert all(
+        a["room"] == CENTRAL_STOCK for a in groups.assets(w) if a["id"] in members
+    )
+    assert sum(store.load(w)[0].inventory.values()) == 4
+    with pytest.raises(ValueError):
+        store.confirm_batch(w, batch, [0], "Doublon")
+
+
+def test_capacity_conflict_noop_and_stale_revision_do_not_change_inventory(campus):
+    store, w, groups = campus
+    assets = groups.assets(w)
+    chosen = next(a for a in assets if a["room"] == "BRS-1")
+    group = save_group(groups, w, [chosen["id"]])
+    with pytest.raises(ValueError, match="Place insuffisante"):
+        groups.plan(w, group, 0, 0, "CBY-102")
+    with pytest.raises(ValueError, match="déjà dans la destination"):
+        groups.plan(w, group, 0, 0, "BRS-1")
+    groups.room_capacity(w, "CBY-102", 0, 2)
+    batch = groups.plan(w, group, 0, 1, "CBY-102", save=True)
+    store.receive_many(w, [{"model": "New", "quantity": 1}], 1)
+    with pytest.raises(ValueError, match="inventaire a changé"):
+        store.confirm_batch(w, batch, [0], "Tentative périmée")
+    assert store.load(w)[0].inventory["BRS-1", "X"] == 1
+    store.cancel_batch(w, batch)
+    assert groups.groups(w)[0]["status"] == "Brouillon"
+
+
+def test_legacy_batches_keep_identity_and_groups_follow_moved_computers(campus):
+    store, w, groups = campus
+    asset = next(a for a in groups.assets(w) if a["room"] == "BRS-1")
+    save_group(groups, w, [asset["id"]])
+    move = Transfer("BRS-1", CENTRAL_STOCK, "X")
+    plan = {
+        "groups": [
+            {
+                "room": "BRS-1",
+                "old_model": "X",
+                "new_model": "X",
+                "source": "BRS-1",
+                "delivery_m": None,
+                "distance_type": "Test",
+                "transfers": [vars(move)],
+            }
+        ]
+    }
+    batch = store.save_batch(w, 0, "Ancien lot", plan)
+    store.confirm_batch(w, batch, [0], "Déplacement réel")
+    current = next(a for a in groups.assets(w) if a["id"] == asset["id"])
+    assert current["room"] == CENTRAL_STOCK
+    assert groups.groups(w)[0]["origins"][asset["id"]] == "BRS-1"
+
+
+def test_unavailable_members_block_plan_and_preserve_identity(campus):
+    store, w, groups = campus
+    asset = groups.assets(w)[0]
+    group = save_group(groups, w, [asset["id"]])
+    groups.metadata(w, asset["id"], 0, "", None, "Hors service", "Haute", True, "")
+    assert not next(a for a in groups.assets(w) if a["id"] == asset["id"])["available"]
+    with pytest.raises(ValueError, match="indisponible"):
+        groups.plan(w, group, 0, 1, CENTRAL_STOCK)
+    assert store.load(w)[0].occupied(asset["room"]) >= 1
+
+
+def test_reset_retires_units_but_does_not_erase_group_history(campus):
+    store, w, groups = campus
+    store.receive_many(w, [{"model": "New", "quantity": 1}], 0)
+    asset = next(a for a in groups.assets(w) if a["room"] == CENTRAL_STOCK)
+    group = groups.save_many(w, 1, [{"name": "Stock", "members": [asset["id"]]}])[0]
+    store.reset_central_stock(w, 1, "Remise à zéro explicite")
+    assert not next(a for a in groups.assets(w) if a["id"] == asset["id"])["active"]
+    assert groups.groups(w)[0]["members"] == [asset["id"]]
+    with pytest.raises(ValueError):
+        groups.plan(w, group, 0, 2, "CBY-101")
+
+
+def test_returned_stock_group_moves_exact_returned_unit_without_consuming_new_stock(
+    campus,
+):
+    store, w, groups = campus
+    old = next(a for a in groups.assets(w) if a["room"] == "BRS-1")
+    group = save_group(groups, w, [old["id"]])
+    batch = groups.plan(w, group, 0, 0, CENTRAL_STOCK, save=True)
+    store.confirm_batch(w, batch, [0], "Retour effectif")
+    store.receive_many(w, [{"model": "X", "quantity": 1}], 1)
+    groups.room_capacity(w, "BRS-1", 2, 1)
+    batch2 = groups.plan(w, group, 1, 3, "BRS-1", save=True)
+    store.confirm_batch(w, batch2, [0], "Réinstallation du retour")
+    assets = groups.assets(w)
+    assert next(a for a in assets if a["id"] == old["id"])["room"] == "BRS-1"
+    stock = [a for a in assets if a["room"] == CENTRAL_STOCK and a["active"]]
+    assert len(stock) == 1 and stock[0]["kind"] == "new"
+    assert store.load(w)[0].returned_stock.get((CENTRAL_STOCK, "X"), 0) == 0
+
+
+def test_multi_room_cycle_keeps_all_registered_identities(tmp_path):
+    from test_homogeneity import campus as cycle_data
+
+    from core.homogeneity import plan_homogeneity, suggested_targets
+
+    store = Store(tmp_path / "cycle.sqlite3")
+    data = cycle_data()
+    w = store.create_workspace("Cycle", data)
+    groups = GroupStore(store)
+    before = groups.assets(w)
+    plan = plan_homogeneity(data, suggested_targets(data), CENTRAL_STOCK)
+    batch = store.save_batch(w, 0, "Cycle", plan)
+    store.confirm_batch(w, batch, [0], "Cycle physique terminé")
+    after = groups.assets(w)
+    assert {a["id"] for a in after if a["active"]} == {a["id"] for a in before}
+    assert Counter((a["room"], a["model"]) for a in after if a["active"]) == Counter(
+        {key: value for key, value in store.load(w)[0].inventory.items() if value}
+    )

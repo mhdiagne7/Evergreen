@@ -319,3 +319,54 @@ def test_workspace_choice_survives_leaving_data_page(application):
     app.switch_page("ui/pages/buildings.py").run()
     assert app.session_state.workspace == first
     assert not app.exception
+
+
+def test_groups_manual_preview_save_edit_and_plan_do_not_move_inventory(application):
+    from core.asset_groups import GroupStore
+
+    app, store, workspace = application
+    before = store.load(workspace)[0]
+    app.run().switch_page("ui/pages/regroup.py").run()
+    assert not app.exception
+    assert not any(
+        "Comment les propositions" in expander.label for expander in app.expander
+    )
+    app.button(key="ag_create").click().run()
+    app.multiselect(key="ag_filter_building").set_value(["CBY"]).run()
+    app.checkbox(key="ag_select_all").check().run()
+    app.text_input(key="ag_create_name").set_value("CBY à vérifier")
+    app.button(key="ag_preview").click().run()
+    assert not app.exception
+    app.button(key="ag_save").click().run()
+    assert not app.exception
+    groups = GroupStore(store).groups(workspace)
+    assert len(groups) == 1 and len(groups[0]["members"]) == 2
+    assert store.load(workspace)[0] == before
+    assert app.metric[0].value == "2"
+    app.selectbox(key="ag_destination_" + groups[0]["id"]).select(CENTRAL_STOCK).run()
+    app.button(key="ag_plan_" + groups[0]["id"]).click().run()
+    assert not app.exception
+    assert app.button(key="ag_plan_save_" + groups[0]["id"]).disabled
+    app.checkbox(key="ag_plan_confirm_" + groups[0]["id"]).check().run()
+    app.button(key="ag_plan_save_" + groups[0]["id"]).click().run()
+    assert not app.exception
+    assert GroupStore(store).groups(workspace)[0]["status"] == "Planifié"
+    assert store.load(workspace)[0] == before
+
+
+def test_groups_automatic_filter_preview_and_save(application):
+    from core.asset_groups import GroupStore
+
+    app, store, workspace = application
+    app.run().switch_page("ui/pages/regroup.py").run()
+    app.button(key="ag_create").click().run()
+    app.radio(key="ag_mode").set_value("Automatique").run()
+    app.multiselect(key="ag_filter_building").set_value(["CBY"]).run()
+    app.number_input(key="ag_maximum").set_value(1).run()
+    app.button(key="ag_preview").click().run()
+    assert not app.exception
+    app.button(key="ag_save").click().run()
+    assert not app.exception
+    groups = GroupStore(store).groups(workspace)
+    assert len(groups) == 2
+    assert all(len(group["members"]) == 1 for group in groups)
