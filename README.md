@@ -21,7 +21,7 @@ est un instantané explicite et ne se met pas à jour automatiquement.
 La carte du campus se trouve directement sur **Accueil**.
 - **Assistant IA local** : question libre, vérification de la demande, calcul puis proposition.
 - **Bâtiments → bâtiment** : modèles présents, proportions et détail des salles.
-- **Regroupements** : créer et conserver des groupes manuels ou automatiques, filtrer les postes et préparer leurs déplacements. Voir [le fonctionnement des groupes](docs/GROUPES.md). Les outils de renouvellement et de regroupement par blocs restent accessibles dans cette page.
+- **Regroupements** : créer et conserver des groupes, sélectionner un bâtiment dans une fenêtre de carte, filtrer par salle ou modèle et préparer les déplacements. Voir [le fonctionnement des groupes](docs/GROUPES.md). Les outils de renouvellement et de regroupement par blocs restent accessibles dans cette page.
 - **Lots de déplacements → lot** : feuille de route, confirmation des opérations
   réalisées et annulation du reste. Préparer un lot ne change pas l’inventaire.
 - **Stock central → réception** : nouveaux ordinateurs, un modèle ou un lot multiple.
