@@ -465,3 +465,208 @@ def test_catalog_uses_only_inventory_hardware_and_preserves_variants(campus):
         != "{}"
     )
     assert before == store.load(w)
+
+
+def test_lot_operation_edit_delete_restore_and_confirm_are_safe(campus):
+    from ui.common import operation_rows, transfer_rows
+
+    store, w, groups = campus
+    assets = groups.assets(w)
+    sources = [a for a in assets if a["room"] == "CBY-101"]
+    partner = next(a for a in assets if a["room"] == "BRS-1")
+    group = save_group(groups, w, [a["id"] for a in sources])
+    batch = groups.plan(w, group, 0, 0, CENTRAL_STOCK, save=True)
+    before = store.load(w)
+    store.delete_operation(w, batch, 0, 0)
+    plan = store.batches(w)[0]["plan"]
+    assert len(operation_rows(plan)) == 1
+    assert len(transfer_rows(plan, before[0])) == 1
+    assert store.load(w) == before
+    with pytest.raises(ValueError):
+        store.confirm_batch(w, batch, [0], "Supprimée", expected_version=1)
+    with pytest.raises(ValueError, match="modifié"):
+        store.delete_operation(w, batch, 1, 0)
+    store.restore_operation(w, batch, 0, 1)
+    store.edit_operation(w, batch, 0, 2, destination="BRS-1", swap=partner["id"])
+    assert store.load(w) == before
+    with pytest.raises(ValueError, match="modifié"):
+        store.confirm_batch(w, batch, [0], "Ancienne fenêtre", expected_version=2)
+    store.confirm_batch(w, batch, [0], "Échange réalisé", expected_version=3)
+    assert (
+        next(a for a in groups.assets(w) if a["id"] == sources[0]["id"])["room"]
+        == "BRS-1"
+    )
+    with pytest.raises(ValueError, match="déjà réalisée"):
+        store.delete_operation(w, batch, 0, 3)
+    store.delete_operation(w, batch, 1, 3)
+    assert store.batches(w)[0]["status"] == "Terminé"
+    store.restore_operation(w, batch, 1, 4)
+    assert store.batches(w)[0]["status"] == "Partiel"
+    store.confirm_batch(w, batch, [1], "Dernier poste", expected_version=5)
+    assert store.batches(w)[0]["status"] == "Terminé"
+
+
+def test_deleted_only_operation_can_be_restored_and_archived_lot_is_recoverable(campus):
+    store, w, groups = campus
+    first = groups.assets(w)[0]
+    group = save_group(groups, w, [first["id"]])
+    batch = groups.plan(w, group, 0, 0, CENTRAL_STOCK, save=True)
+    before = store.load(w)
+    store.delete_operation(w, batch, 0, 0)
+    assert store.batches(w)[0]["status"] == "Annulé"
+    store.archive_batch(w, batch)
+    assert not store.batches(w)
+    assert store.batches(w, include_hidden=True)[0]["plan"]["hidden"]
+    store.archive_batch(w, batch, hidden=False)
+    store.restore_operation(w, batch, 0, 1)
+    assert store.batches(w)[0]["status"] == "Préparé"
+    assert store.load(w) == before
+
+
+def test_group_comparison_is_saved_and_rejects_changed_target_or_outsiders(campus):
+    store, w, groups = campus
+    assets = groups.assets(w)
+    first = next(a for a in assets if a["room"] == "CBY-101")
+    second = next(a for a in assets if a["room"] == "CBY-102")
+    outsider = next(a for a in assets if a["room"] == "BRS-1")
+    source = save_group(groups, w, [first["id"]], name="Groupe 1")
+    target = save_group(groups, w, [second["id"]], name="Groupe 2")
+    before = store.load(w)
+    comparison = {"id": target, "version": 0}
+    with pytest.raises(ValueError, match="comparaison"):
+        groups.plan(
+            w,
+            source,
+            0,
+            0,
+            assignments={
+                first["id"]: {"destination": outsider["room"], "swap": outsider["id"]}
+            },
+            comparison=comparison,
+        )
+    groups.update(w, target, 0, "Groupe 2 renommé", "", [second["id"]])
+    with pytest.raises(ValueError, match="changé"):
+        groups.plan(
+            w,
+            source,
+            0,
+            0,
+            assignments={
+                first["id"]: {"destination": second["room"], "swap": second["id"]}
+            },
+            comparison=comparison,
+        )
+    batch = groups.plan(
+        w,
+        source,
+        0,
+        0,
+        assignments={
+            first["id"]: {"destination": second["room"], "swap": second["id"]}
+        },
+        comparison={"id": target, "version": 1},
+        save=True,
+    )
+    saved = store.batches(w)[0]
+    assert saved["id"] == batch and saved["name"] == "Groupe 1 ⇄ Groupe 2 renommé"
+    assert saved["plan"]["comparison_group"]["id"] == target
+    assert store.load(w) == before
+
+
+def test_undo_confirmed_swap_restores_exact_assets_and_preserves_other_receipts(campus):
+    store, w, groups = campus
+    assets = groups.assets(w)
+    first = next(a for a in assets if a["room"] == "CBY-101")
+    second = next(a for a in assets if a["room"] == "CBY-102")
+    group = save_group(groups, w, [first["id"]])
+    before = store.load(w)[0]
+    batch = groups.plan(
+        w,
+        group,
+        0,
+        0,
+        assignments={
+            first["id"]: {"destination": second["room"], "swap": second["id"]}
+        },
+        save=True,
+    )
+    with pytest.raises(ValueError):
+        store.undo_confirmed_swaps(w, batch, [0], 0, "Pas encore confirmé")
+    store.confirm_batch(w, batch, [0], "Confirmation de test")
+    store.receive_many(w, [{"model": "Autre livraison", "quantity": 4}], 1)
+    snapshot = store.load(w)
+    store.undo_confirmed_swaps(w, batch, [0], 2, preview=True)
+    assert store.load(w) == snapshot
+    store.undo_confirmed_swaps(
+        w, batch, [0], 2, "Swap de test, aucun déplacement physique"
+    )
+    after = store.load(w)[0]
+    for key, value in before.inventory.items():
+        assert after.inventory.get(key, 0) == value
+    assert after.inventory[CENTRAL_STOCK, "Autre livraison"] == 4
+    current = {a["id"]: a for a in groups.assets(w)}
+    assert current[first["id"]]["room"] == first["room"]
+    assert current[second["id"]]["room"] == second["room"]
+    assert store.batches(w)[0]["status"] == "Annulé"
+    with pytest.raises(ValueError, match="déjà été annulé"):
+        store.undo_confirmed_swaps(w, batch, [0], 3, "Doublon")
+
+
+def test_undo_refuses_a_swap_if_one_computer_has_moved_since(campus):
+    store, w, groups = campus
+    assets = groups.assets(w)
+    first = next(a for a in assets if a["room"] == "CBY-101")
+    second = next(a for a in assets if a["room"] == "CBY-102")
+    group = save_group(groups, w, [first["id"]])
+    batch = groups.plan(
+        w,
+        group,
+        0,
+        0,
+        assignments={
+            first["id"]: {"destination": second["room"], "swap": second["id"]}
+        },
+        save=True,
+    )
+    store.confirm_batch(w, batch, [0], "Swap réalisé")
+    move = groups.plan(w, group, 1, 1, CENTRAL_STOCK, save=True)
+    store.confirm_batch(w, move, [0], "Autre intervention")
+    before = store.load(w)
+    with pytest.raises(ValueError, match="emplacement"):
+        store.undo_confirmed_swaps(
+            w, batch, [0], 2, "Ne pas écraser une autre intervention"
+        )
+    assert store.load(w) == before
+
+
+def test_undo_multiple_swaps_is_atomic_if_one_asset_is_unavailable(campus):
+    store, w, groups = campus
+    assets = groups.assets(w)
+    sources = [a for a in assets if a["room"] == "CBY-101"]
+    targets = [
+        next(a for a in assets if a["room"] == "CBY-102"),
+        next(a for a in assets if a["room"] == "BRS-1"),
+    ]
+    group = save_group(groups, w, [a["id"] for a in sources])
+    batch = groups.plan(
+        w,
+        group,
+        0,
+        0,
+        assignments={
+            a["id"]: {"destination": b["room"], "swap": b["id"]}
+            for a, b in zip(sources, targets)
+        },
+        save=True,
+    )
+    store.confirm_batch(w, batch, [0, 1], "Deux échanges")
+    groups.metadata(
+        w, sources[0]["id"], 1, "", None, "Hors service", "Normale", False, ""
+    )
+    before = store.load(w)
+    positions = {a["id"]: a["room"] for a in groups.assets(w)}
+    with pytest.raises(ValueError):
+        store.undo_confirmed_swaps(w, batch, [0, 1], 2, "Annulation des deux")
+    assert store.load(w) == before
+    assert {a["id"]: a["room"] for a in groups.assets(w)} == positions
+    assert not any(g.get("undone") for g in store.batches(w)[0]["plan"]["groups"])

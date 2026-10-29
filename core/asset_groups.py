@@ -960,6 +960,7 @@ class GroupStore:
         destination=None,
         save=False,
         assignments=None,
+        comparison=None,
     ):
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -994,6 +995,34 @@ class GroupStore:
                 else movement_plan(data, selected, destination)
             )
             plan["asset_group_id"] = identifier
+            batch_name = group["name"]
+            if comparison is not None:
+                target = db.execute(
+                    "SELECT * FROM asset_groups WHERE id=? AND workspace=?",
+                    (comparison["id"], workspace),
+                ).fetchone()
+                if (
+                    target is None
+                    or target["id"] == identifier
+                    or target["version"] != comparison["version"]
+                ):
+                    raise ValueError(
+                        "Le groupe de comparaison a changé. Actualise la sélection."
+                    )
+                target_ids = set(json.loads(target["members"])) - set(ids)
+                if assignments is None or any(
+                    choice.get("swap") not in target_ids
+                    for choice in assignments.values()
+                ):
+                    raise ValueError(
+                        "Chaque poste de retour doit appartenir au groupe de comparaison, hors postes communs."
+                    )
+                plan["comparison_group"] = {
+                    "id": target["id"],
+                    "version": target["version"],
+                    "name": target["name"],
+                }
+                batch_name += " ⇄ " + target["name"]
             self.store._validate_plan(data, plan["groups"], allow_asset_movement=True)
             if not save:
                 return plan
@@ -1004,7 +1033,7 @@ class GroupStore:
                     batch,
                     workspace,
                     revision,
-                    group["name"],
+                    batch_name,
                     json.dumps(plan, ensure_ascii=False),
                     "Préparé",
                     now(),

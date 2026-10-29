@@ -97,3 +97,39 @@ def test_workspaces_separated_and_backup_restorable(tmp_path):
     restored = Store(destination)
     assert restored.load(key)[0].inventory["A stock", "New"] == 1
     assert len(restored.list_workspaces()) == 2
+
+
+def test_edit_generic_operation_revalidates_and_token_detects_new_lot(tmp_path):
+    store, key, plan = setup_store(tmp_path)
+    token = store.change_token(key)
+    batch = store.save_batch(key, 0, "À modifier", plan)
+    assert store.change_token(key) != token
+    before = store.load(key)
+    transfers = plan["groups"][0]["transfers"]
+    store.edit_operation(key, batch, 0, 0, transfers=transfers)
+    assert store.load(key) == before
+    invalid = [dict(move) for move in transfers]
+    invalid[0]["quantity"] = 1000
+    with pytest.raises(ValueError):
+        store.edit_operation(key, batch, 0, 1, transfers=invalid)
+    assert store.batches(key)[0]["plan"]["edit_version"] == 1
+
+
+@pytest.mark.parametrize("confirmed", [False, True])
+def test_delete_lot_hides_card_and_preserves_confirmed_inventory(tmp_path, confirmed):
+    store, key, plan = setup_store(tmp_path)
+    batch = store.save_batch(key, 0, "À supprimer", plan)
+    if confirmed:
+        store.confirm_batch(key, batch, [0], "Premier déplacement effectué")
+    before = store.load(key)
+    store.delete_batch(key, batch)
+    assert store.batches(key) == []
+    archived = store.batches(key, include_hidden=True)[0]
+    assert archived["status"] == "Annulé"
+    assert archived["plan"]["hidden"]
+    assert store.load(key)[0].inventory == before[0].inventory
+    assert store.load(key)[2] == before[2]
+    with pytest.raises(ValueError):
+        store.confirm_batch(key, batch, [1], "Lot supprimé")
+    with pytest.raises(ValueError):
+        store.delete_batch(key, batch)

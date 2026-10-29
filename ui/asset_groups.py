@@ -36,7 +36,7 @@ def asset_rows(assets, origins=None):
     ]
 
 
-def filters_view(assets, prefix):
+def filters_view(assets, prefix, include_ids=()):
     filters = {}
     with st.expander("Filtrer les ordinateurs", expanded=True):
         columns = st.columns(2)
@@ -58,7 +58,8 @@ def filters_view(assets, prefix):
     return [
         a
         for a in found
-        if a["active"] and a["available"] and a["room_type"] == "classroom"
+        if (a["active"] and a["available"] and a["room_type"] == "classroom")
+        or a["id"] in include_ids
     ]
 
 
@@ -369,12 +370,63 @@ def selected_table_asset(event, assets):
 def swaps_dialog(groups_store, workspace, data, revision, assets, members, group):
     from core.campus import building_distance
 
-    st.subheader(group["name"])
-    context = (workspace, group["id"], group["version"], revision)
-    draft = st.session_state.get("ag_swap_queue")
-    if not draft or draft["context"] != context:
-        draft = {"context": context, "pairs": []}
-        st.session_state.ag_swap_queue = draft
+    groups = groups_store.groups(workspace)
+    by_group = {item["id"]: item for item in groups}
+    sources = [
+        item["id"] for item in groups if item["status"] not in {"Planifié", "En cours"}
+    ]
+    if not sources:
+        st.info("Aucun groupe disponible pour préparer de nouveaux échanges.")
+        return
+    if st.session_state.get("ag_swap_source_group") not in sources:
+        st.session_state.ag_swap_source_group = (
+            group["id"] if group["id"] in sources else sources[0]
+        )
+    first_selector, second_selector = st.columns(2)
+    source_id = first_selector.selectbox(
+        "Groupe de départ",
+        sources,
+        format_func=lambda value: by_group[value]["name"],
+        key="ag_swap_source_group",
+    )
+    targets = [None] + [item["id"] for item in groups if item["id"] != source_id]
+    if st.session_state.get("ag_swap_target_group") not in targets:
+        st.session_state.ag_swap_target_group = None
+    target_id = second_selector.selectbox(
+        "Comparer avec",
+        targets,
+        format_func=lambda value: (
+            "Reste des ordinateurs du campus"
+            if value is None
+            else by_group[value]["name"]
+        ),
+        key="ag_swap_target_group",
+    )
+    group = by_group[source_id]
+    target = by_group[target_id] if target_id else None
+    members = [a for a in assets if a["id"] in group["members"]]
+    comparison = {"id": target["id"], "version": target["version"]} if target else None
+    st.subheader(
+        group["name"] + " ⇄ " + (target["name"] if target else "Reste du campus")
+    )
+    context = (
+        workspace,
+        group["id"],
+        group["version"],
+        revision,
+        target_id,
+        target["version"] if target else None,
+    )
+    queues = st.session_state.setdefault("ag_swap_queues", {})
+    context_key = str(context)
+    if context_key not in queues:
+        queues[context_key] = {"context": context, "pairs": []}
+    draft = queues[context_key]
+    previous = st.session_state.get("ag_swap_queue")
+    if previous and previous["context"] != context:
+        st.session_state.ag_swap_left_search = ""
+        st.session_state.ag_swap_right_search = ""
+    st.session_state.ag_swap_queue = draft
     pairs = draft["pairs"]
     by_id = {a["id"]: a for a in assets}
     used = {item for pair in pairs for item in pair}
@@ -394,7 +446,7 @@ def swaps_dialog(groups_store, workspace, data, revision, assets, members, group
     left, right = st.columns(2)
     table_key = str(context) + str(pairs)
     with left:
-        st.markdown("**Ordinateurs du groupe**")
+        st.markdown("**" + group["name"] + "**")
         query = st.text_input("Rechercher dans le groupe", key="ag_swap_left_search")
         left_assets = [
             a for a in left_assets if query.casefold() in asset_label(a).casefold()
@@ -411,12 +463,16 @@ def swaps_dialog(groups_store, workspace, data, revision, assets, members, group
         )
         first = selected_table_asset(left_event, left_assets)
     with right:
-        st.markdown("**Autres ordinateurs disponibles**")
+        st.markdown(
+            "**" + (target["name"] if target else "Autres ordinateurs du campus") + "**"
+        )
         query = st.text_input("Rechercher hors du groupe", key="ag_swap_right_search")
         outside = [
             a
             for a in eligible
-            if a["id"] not in member_ids and (not first or a["room"] != first["room"])
+            if a["id"] not in member_ids
+            and (target is None or a["id"] in target["members"])
+            and (not first or a["room"] != first["room"])
         ]
 
         def proximity(asset):
@@ -475,6 +531,7 @@ def swaps_dialog(groups_store, workspace, data, revision, assets, members, group
                 group["version"],
                 revision,
                 assignments=assignments_for(proposed),
+                comparison=comparison,
             )
             draft["pairs"] = proposed
             st.session_state.ag_swap_queue = draft
@@ -516,7 +573,8 @@ def swaps_dialog(groups_store, workspace, data, revision, assets, members, group
             st.session_state.ag_swap_queue = draft
             st.rerun()
         confirmed = st.checkbox(
-            "Je confirme ces échanges à réaliser", key="ag_swap_confirm_" + str(pairs)
+            "Je confirme ces échanges à réaliser",
+            key="ag_swap_confirm_" + str(context) + str(pairs),
         )
         if st.button(
             "Enregistrer la liste des échanges",
@@ -531,6 +589,7 @@ def swaps_dialog(groups_store, workspace, data, revision, assets, members, group
                     group["version"],
                     revision,
                     assignments=assignments_for(pairs),
+                    comparison=comparison,
                     save=True,
                 )
                 close_swap_dialog()
@@ -547,6 +606,177 @@ def swaps_dialog(groups_store, workspace, data, revision, assets, members, group
     if st.button("Fermer", key="ag_swap_close"):
         close_swap_dialog()
         st.rerun()
+
+
+def close_group_editor():
+    st.session_state.ag_group_editor_open = None
+    st.session_state.pop("ag_group_editor_draft", None)
+    for key in list(st.session_state):
+        if key.startswith("ag_editor_"):
+            del st.session_state[key]
+
+
+@st.dialog("Modifier le groupe", width="large", on_dismiss=close_group_editor)
+def group_editor(groups_store, workspace, data, revision, assets, group):
+    draft = st.session_state.get("ag_group_editor_draft")
+    if not draft or draft["group"] != group["id"] or draft["workspace"] != workspace:
+        draft = {
+            "group": group["id"],
+            "workspace": workspace,
+            "version": group["version"],
+            "name": group["name"],
+            "description": group["description"],
+            "members": list(group["members"]),
+            "buildings": sorted(
+                {a["building"] for a in assets if a["id"] in group["members"]}
+            ),
+            "map": False,
+            "view": None,
+            "nonce": 0,
+        }
+        st.session_state.ag_group_editor_draft = draft
+    if draft["version"] != group["version"] or group["status"] in {
+        "Planifié",
+        "En cours",
+    }:
+        st.info(
+            "Ce groupe a changé ou possède un lot actif. Ferme la fenêtre avant de reprendre."
+        )
+        if st.button("Fermer", key="ag_editor_stale_close"):
+            close_group_editor()
+            st.rerun()
+        return
+    if draft["map"]:
+        from map_view import campus_map
+
+        st.subheader("Choisir les bâtiments")
+        selected = (
+            campus_map(
+                data,
+                sorted({a["model"] for a in assets}),
+                key_prefix="ag_editor_map",
+                multiple=True,
+            )
+            or []
+        )
+        if selected:
+            st.write("Bâtiments sélectionnés : " + ", ".join(selected))
+        if st.button(
+            "Confirmer les bâtiments",
+            type="primary",
+            disabled=not selected,
+            key="ag_editor_map_confirm",
+        ):
+            draft["buildings"] = selected
+            draft["map"] = False
+            st.rerun()
+        if st.button("Revenir au formulaire", key="ag_editor_map_cancel"):
+            draft["map"] = False
+            st.rerun()
+        return
+    st.subheader("Nom du groupe")
+    draft["name"] = st.text_input(
+        "Nom du groupe",
+        value=draft["name"],
+        label_visibility="collapsed",
+        key="ag_editor_name",
+    )
+    draft["description"] = st.text_area(
+        "Description", value=draft["description"], key="ag_editor_description"
+    )
+    if st.button(
+        "Sélectionner des bâtiments sur la carte",
+        type="primary",
+        width="stretch",
+        key="ag_editor_open_map",
+    ):
+        draft["map"] = True
+        st.rerun()
+    if draft["buildings"]:
+        st.write("Bâtiments affichés : **" + ", ".join(draft["buildings"]) + "**")
+        if st.button("Afficher tous les bâtiments", key="ag_editor_all_buildings"):
+            draft["buildings"] = []
+            st.rerun()
+    existing = set(group["members"])
+    eligible = [
+        a
+        for a in assets
+        if (
+            a["id"] in existing
+            or (a["active"] and a["available"] and a["room_type"] == "classroom")
+        )
+        and (not draft["buildings"] or a["building"] in draft["buildings"])
+    ]
+    found = filters_view(eligible, "ag_editor_filter_", include_ids=existing)
+    found.sort(key=lambda a: (a["model"], a["room"], a.get("service_tag") or a["id"]))
+    visible = {a["id"] for a in found}
+    view = tuple(a["id"] for a in found)
+    if draft["view"] != view:
+        draft["nonce"] += 1
+        draft["view"] = view
+    selected = set(draft["members"])
+    first, second = st.columns(2)
+    if first.button("Tout sélectionner dans cette vue", key="ag_editor_select_visible"):
+        draft["members"] = sorted(selected | visible)
+        draft["nonce"] += 1
+        st.rerun()
+    if second.button(
+        "Tout désélectionner dans cette vue", key="ag_editor_clear_visible"
+    ):
+        draft["members"] = sorted(selected - visible)
+        draft["nonce"] += 1
+        st.rerun()
+    chosen = selection_table(found, "ag_editor_table_" + str(draft["nonce"]), selected)
+    selected = (selected - visible) | set(chosen)
+    draft["members"] = sorted(selected)
+    st.caption(
+        "Les filtres limitent l’affichage ; les postes masqués restent sélectionnés dans le groupe."
+    )
+    by_id = {a["id"]: a for a in assets}
+    counts = Counter(by_id[item]["model"] for item in selected if item in by_id)
+    first, second = st.columns(2)
+    first.metric("Ordinateurs sélectionnés", len(selected))
+    second.metric("Modèles différents", len(counts))
+    with st.expander("Prévisualiser les changements"):
+        table(
+            [
+                {"Modèle": model, "Nombre d’ordinateurs": count}
+                for model, count in sorted(counts.items())
+            ]
+        )
+        table(asset_rows([by_id[item] for item in sorted(selected) if item in by_id]))
+    if st.button("Enregistrer les modifications", type="primary", key="ag_editor_save"):
+        try:
+            groups_store.update(
+                workspace,
+                group["id"],
+                draft["version"],
+                draft["name"],
+                draft["description"],
+                draft["members"],
+            )
+            close_group_editor()
+            refresh("Groupe mis à jour ; aucun ordinateur déplacé.")
+        except ValueError as error:
+            st.error(str(error))
+    if st.button("Annuler", key="ag_editor_cancel"):
+        close_group_editor()
+        st.rerun()
+    with st.expander("Supprimer le groupe"):
+        confirmed = st.checkbox(
+            "Supprimer uniquement ce groupe, sans supprimer les ordinateurs",
+            key="ag_editor_delete_confirm",
+        )
+        if st.button(
+            "Supprimer le groupe", disabled=not confirmed, key="ag_editor_delete"
+        ):
+            try:
+                groups_store.delete(workspace, group["id"], draft["version"])
+                close_group_editor()
+                st.session_state.pop("ag_selected", None)
+                refresh("Groupe supprimé ; ordinateurs conservés.")
+            except ValueError as error:
+                st.error(str(error))
 
 
 def group_view(store, workspace, data, revision, groups_store, assets, group):
@@ -605,66 +835,17 @@ def group_view(store, workspace, data, revision, groups_store, assets, group):
                 group_highlight=True,
             )
     locked = group["status"] in {"Planifié", "En cours"}
-    with st.expander("Modifier ou supprimer le groupe"):
-        if locked:
-            st.info("Termine ou annule le lot actif avant de modifier la composition.")
-        else:
-            name = st.text_input(
-                "Nom", group["name"], key="ag_edit_name_" + group["id"]
-            )
-            description = st.text_area(
-                "Description du groupe",
-                group["description"],
-                key="ag_edit_description_" + group["id"],
-            )
-            eligible = [
-                a
-                for a in assets
-                if a["active"] and (a["available"] or a["id"] in group["members"])
-            ]
-            st.caption(
-                "Coche ou décoche les ordinateurs pour en ajouter ou en retirer."
-            )
-            selected = selection_table(
-                eligible,
-                "ag_edit_"
-                + group["id"]
-                + "_"
-                + str(group["version"])
-                + "_"
-                + str(revision),
-                group["members"],
-            )
-            if st.button(
-                "Enregistrer les modifications", key="ag_update_" + group["id"]
-            ):
-                try:
-                    groups_store.update(
-                        workspace,
-                        group["id"],
-                        group["version"],
-                        name,
-                        description,
-                        selected,
-                    )
-                    refresh("Groupe mis à jour ; inventaire inchangé.")
-                except ValueError as error:
-                    st.error(str(error))
-            confirmed = st.checkbox(
-                "Supprimer uniquement le groupe, sans supprimer les ordinateurs",
-                key="ag_delete_confirm_" + group["id"],
-            )
-            if st.button(
-                "Supprimer le groupe",
-                disabled=not confirmed,
-                key="ag_delete_" + group["id"],
-            ):
-                try:
-                    groups_store.delete(workspace, group["id"], group["version"])
-                    st.session_state.pop("ag_selected", None)
-                    refresh("Groupe supprimé ; ordinateurs conservés.")
-                except ValueError as error:
-                    st.error(str(error))
+    if st.button(
+        "Modifier le groupe",
+        key="ag_open_group_editor",
+        width="stretch",
+        disabled=locked,
+    ):
+        close_group_editor()
+        close_swap_dialog()
+        st.session_state.ag_group_editor_open = group["id"]
+    if st.session_state.get("ag_group_editor_open") == group["id"]:
+        group_editor(groups_store, workspace, data, revision, assets, group)
     st.subheader("Déplacement groupé")
     if locked:
         st.info(
@@ -684,6 +865,9 @@ def group_view(store, workspace, data, revision, groups_store, assets, group):
         width="stretch",
         key="ag_open_swaps",
     ):
+        close_group_editor()
+        st.session_state.ag_swap_source_group = group["id"]
+        st.session_state.ag_swap_target_group = None
         st.session_state.ag_swap_open = group["id"]
     if st.session_state.get("ag_swap_open") == group["id"]:
         swaps_dialog(groups_store, workspace, data, revision, assets, members, group)
@@ -705,12 +889,52 @@ def groups_view(store, workspace, data, models, revision):
         by_id = {g["id"]: g for g in groups}
         if st.session_state.get("ag_selected") not in choices:
             st.session_state.ag_selected = choices[0]
-        selected = st.selectbox(
-            "Groupes enregistrés",
-            choices,
-            format_func=lambda item: by_id[item]["name"],
-            key="ag_selected",
-        )
+        st.subheader("Groupes enregistrés")
+        for index, group in enumerate(groups):
+            if index % 3 == 0:
+                cards = st.columns(3, gap="small")
+            with cards[index % 3]:
+                with st.container(border=True):
+                    title, actions = st.columns([3, 1])
+                    with title:
+                        st.markdown(f"**{group['name']}**")
+                    with actions:
+                        with st.popover("⋮", help="Actions du groupe"):
+                            locked = group["status"] in {"Planifié", "En cours"}
+                            if st.button(
+                                "Supprimer",
+                                key="ag_delete_card_" + group["id"],
+                                icon=":material/delete:",
+                                disabled=locked,
+                            ):
+                                try:
+                                    groups_store.delete(
+                                        workspace, group["id"], group["version"]
+                                    )
+                                except ValueError as error:
+                                    st.error(str(error))
+                                else:
+                                    close_group_editor()
+                                    close_swap_dialog()
+                                    if st.session_state.get("ag_selected") == group["id"]:
+                                        st.session_state.pop("ag_selected", None)
+                                    refresh("Groupe supprimé ; ordinateurs conservés.")
+                            if locked:
+                                st.caption(
+                                    "Annule ou termine le lot actif avant de supprimer ce groupe."
+                                )
+                    model_count = len(
+                        {a["model"] for a in assets if a["id"] in group["members"]}
+                    )
+                    st.caption(
+                        f"{len(group['members'])} ordinateurs · {model_count} modèles"
+                    )
+                    if st.button("Ouvrir →", key="ag_open_card_" + group["id"]):
+                        close_group_editor()
+                        close_swap_dialog()
+                        st.session_state.ag_selected = group["id"]
+        selected = st.session_state.ag_selected
+        st.divider()
         group_view(
             store, workspace, data, revision, groups_store, assets, by_id[selected]
         )

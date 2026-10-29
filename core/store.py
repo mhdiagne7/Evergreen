@@ -130,6 +130,17 @@ class Store:
             row, data = self._read(db, identifier)
             return data, json.loads(row["models"]), row["revision"], row["name"]
 
+    def change_token(self, identifier):
+        """Révision et dernière action persistée, pour rafraîchir les vues ouvertes."""
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT revision, (SELECT COALESCE(MAX(id),0) FROM events WHERE workspace=?) AS event_id, (SELECT COALESCE(MAX(rowid),0) FROM batches WHERE workspace=?) AS batch_id FROM workspaces WHERE id=?",
+                (identifier, identifier, identifier),
+            ).fetchone()
+            if row is None:
+                return None
+            return row["revision"], row["event_id"], row["batch_id"]
+
     def _check_revision(self, row, revision):
         if row["revision"] != revision:
             raise ValueError(
@@ -476,7 +487,7 @@ class Store:
                 data = apply_transfers(data, transfers)
         return data
 
-    def batches(self, identifier):
+    def batches(self, identifier, include_hidden=False):
         with self.connect() as db:
             rows = [
                 dict(row)
@@ -487,9 +498,15 @@ class Store:
             ]
         for row in rows:
             row["plan"] = json.loads(row["plan"])
-        return rows
+        return (
+            rows
+            if include_hidden
+            else [row for row in rows if not row["plan"].get("hidden")]
+        )
 
-    def confirm_batch(self, identifier, batch_id, completed, note):
+    def confirm_batch(
+        self, identifier, batch_id, completed, note, expected_version=None
+    ):
         """Une opération de salle est indivisible : retrait, pose et retour ensemble."""
         if not note.strip() or not completed or len(set(completed)) != len(completed):
             raise ValueError(
@@ -506,7 +523,16 @@ class Store:
                 raise ValueError("Ce lot est déjà terminé, annulé ou introuvable.")
             self._check_revision(row, batch["revision"])
             plan = json.loads(batch["plan"])
-            valid = [i for i, g in enumerate(plan["groups"]) if not g.get("completed")]
+            if (
+                expected_version is not None
+                and plan.get("edit_version", 0) != expected_version
+            ):
+                raise ValueError("Le lot a été modifié. Actualise avant de confirmer.")
+            valid = [
+                i
+                for i, g in enumerate(plan["groups"])
+                if not g.get("completed") and not g.get("deleted")
+            ]
             if any(
                 isinstance(i, bool) or not isinstance(i, int) or i not in valid
                 for i in completed
@@ -530,7 +556,7 @@ class Store:
                 plan["groups"][i]["completed"] = True
             status = (
                 "Terminé"
-                if all(g.get("completed") for g in plan["groups"])
+                if all(g.get("completed") or g.get("deleted") for g in plan["groups"])
                 else "Partiel"
             )
             db.execute(
@@ -548,6 +574,399 @@ class Store:
                 "Déplacements confirmés",
                 note.strip(),
                 {"batch": batch_id, "name": batch["name"], "groups": chosen},
+            )
+
+    def undo_confirmed_swaps(
+        self,
+        identifier,
+        batch_id,
+        indices,
+        revision,
+        note="",
+        expected_version=None,
+        preview=False,
+    ):
+        """Annule les écritures d’échanges identifiés, sans restaurer toute la base."""
+        from core.asset_groups import move_assets, registry_exists
+        from core.buildings import apply_classroom_swap
+
+        if (
+            not indices
+            or any(type(index) is not int for index in indices)
+            or len(set(indices)) != len(indices)
+        ):
+            raise ValueError("Sélectionner des swaps confirmés distincts.")
+        if not preview and not note.strip():
+            raise ValueError("Renseigner le motif de l’annulation.")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row, data = self._read(db, identifier)
+            self._check_revision(row, revision)
+            batch = db.execute(
+                "SELECT * FROM batches WHERE id=? AND workspace=?",
+                (batch_id, identifier),
+            ).fetchone()
+            if batch is None or not registry_exists(db):
+                raise ValueError("Lot ou suivi individuel introuvable.")
+            plan = json.loads(batch["plan"])
+            if (
+                expected_version is not None
+                and plan.get("edit_version", 0) != expected_version
+            ):
+                raise ValueError("Le lot a été modifié. Actualise avant d’annuler.")
+            locations = {
+                asset["id"]: dict(asset)
+                for asset in db.execute(
+                    "SELECT * FROM tracked_assets WHERE workspace=?", (identifier,)
+                )
+            }
+            inverse = []
+            work = data
+            for index in sorted(indices, reverse=True):
+                if type(index) is not int or not 0 <= index < len(plan["groups"]):
+                    raise ValueError("Swap introuvable.")
+                operation = plan["groups"][index]
+                ids = operation.get("asset_moves") or []
+                transfers = operation.get("transfers", [])
+                if (
+                    not operation.get("swap")
+                    or not operation.get("completed")
+                    or operation.get("undone")
+                    or operation.get("deleted")
+                    or len(ids) != 2
+                    or len(set(ids)) != 2
+                    or len(transfers) != 2
+                    or any(
+                        t.get("quantity", 1) != 1 or t.get("stock_kind", "any") != "any"
+                        for t in transfers
+                    )
+                ):
+                    raise ValueError(
+                        "Ce swap n’est pas confirmé, a déjà été annulé ou n’a pas d’identifiants fiables."
+                    )
+                reversed_moves = []
+                for asset_id, original in zip(ids, transfers):
+                    asset = locations.get(asset_id)
+                    if (
+                        asset is None
+                        or not asset["active"]
+                        or not asset["available"]
+                        or asset["room"] != original["destination"]
+                        or asset["model"] != original["model"]
+                    ):
+                        raise ValueError(
+                            "Un poste a changé d’emplacement ou n’est plus disponible : annulation refusée."
+                        )
+                    reversed_moves.append(
+                        Transfer(
+                            original["destination"],
+                            original["source"],
+                            original["model"],
+                        )
+                    )
+                work = apply_classroom_swap(work, reversed_moves)
+                inverse.append(
+                    {
+                        "swap": True,
+                        "asset_moves": ids,
+                        "transfers": [asdict(move) for move in reversed_moves],
+                        "original_operation": index,
+                        "service_tags": [
+                            locations[asset_id].get("service_tag", "")
+                            for asset_id in ids
+                        ],
+                    }
+                )
+                for asset_id, move in zip(ids, reversed_moves):
+                    locations[asset_id]["room"] = move.destination
+            if preview:
+                return inverse
+            move_assets(db, identifier, data, inverse)
+            self._save(db, identifier, work)
+            for index in indices:
+                plan["groups"][index]["undone"] = {"at": now(), "note": note.strip()}
+            plan["edit_version"] = plan.get("edit_version", 0) + 1
+            pending = any(
+                not g.get("completed") and not g.get("deleted") for g in plan["groups"]
+            )
+            done = any(
+                g.get("completed") and not g.get("undone") for g in plan["groups"]
+            )
+            status = (
+                ("Partiel" if done else "Préparé")
+                if pending
+                else ("Terminé" if done else "Annulé")
+            )
+            if batch["status"] == "Annulé":
+                status = "Annulé"
+            db.execute(
+                "UPDATE batches SET plan=?,revision=?,status=? WHERE id=?",
+                (json.dumps(plan, ensure_ascii=False), revision + 1, status, batch_id),
+            )
+            self._event(
+                db,
+                identifier,
+                "Swaps confirmés annulés",
+                note.strip(),
+                {
+                    "batch": batch_id,
+                    "name": batch["name"],
+                    "operations": indices,
+                    "inverse": inverse,
+                },
+            )
+            return inverse
+
+    def _operation_context(
+        self, db, identifier, batch_id, index, version, restore=False
+    ):
+        row, data = self._read(db, identifier)
+        batch = db.execute(
+            "SELECT * FROM batches WHERE id=? AND workspace=?", (batch_id, identifier)
+        ).fetchone()
+        if not batch:
+            raise ValueError("Lot introuvable.")
+        plan = json.loads(batch["plan"])
+        allowed = batch["status"] in {"Préparé", "Partiel"} or (
+            restore
+            and (
+                batch["status"] == "Terminé"
+                or (batch["status"] == "Annulé" and plan.get("empty_after_deletions"))
+            )
+        )
+        if not allowed or plan.get("hidden"):
+            raise ValueError("Ce lot n’est plus modifiable.")
+        self._check_revision(row, batch["revision"])
+        if plan.get("edit_version", 0) != version:
+            raise ValueError("Le lot a été modifié. Actualise avant de continuer.")
+        if type(index) is not int or not 0 <= index < len(plan["groups"]):
+            raise ValueError("Opération introuvable.")
+        operation = plan["groups"][index]
+        if operation.get("completed"):
+            raise ValueError(
+                "Une opération déjà réalisée ne peut pas être modifiée ou supprimée."
+            )
+        if bool(operation.get("deleted")) != restore:
+            raise ValueError("Cette opération est déjà supprimée ou restaurée.")
+        return data, batch, plan, operation
+
+    def _save_edited_plan(self, db, identifier, batch, plan, data, action, before):
+        remaining = [
+            g for g in plan["groups"] if not g.get("completed") and not g.get("deleted")
+        ]
+        used = set()
+        for operation in remaining:
+            ids = operation.get("asset_moves") or operation.get("asset_ids") or []
+            if any(asset_id in used for asset_id in ids):
+                raise ValueError(
+                    "Un ordinateur ne peut pas participer à plusieurs opérations du lot."
+                )
+            used.update(ids)
+        self._validate_plan(
+            data,
+            remaining,
+            plan.get("mode") == "homogenization",
+            plan.get("mode") == "asset_group",
+        )
+        plan["edit_version"] = plan.get("edit_version", 0) + 1
+        done = any(g.get("completed") for g in plan["groups"])
+        status = (
+            ("Partiel" if done else "Préparé")
+            if remaining
+            else ("Terminé" if done else "Annulé")
+        )
+        plan["empty_after_deletions"] = not remaining and not done
+        db.execute(
+            "UPDATE batches SET plan=?,status=? WHERE id=?",
+            (json.dumps(plan, ensure_ascii=False), status, batch["id"]),
+        )
+        self._event(
+            db,
+            identifier,
+            action,
+            "Inventaire inchangé",
+            {
+                "batch": batch["id"],
+                "before": before,
+                "edit_version": plan["edit_version"],
+            },
+        )
+
+    def delete_operation(self, identifier, batch_id, index, version):
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            data, batch, plan, operation = self._operation_context(
+                db, identifier, batch_id, index, version
+            )
+            before = deepcopy(operation)
+            operation["deleted"] = True
+            self._save_edited_plan(
+                db, identifier, batch, plan, data, "Opération supprimée du lot", before
+            )
+
+    def restore_operation(self, identifier, batch_id, index, version):
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            data, batch, plan, operation = self._operation_context(
+                db, identifier, batch_id, index, version, restore=True
+            )
+            before = deepcopy(operation)
+            operation.pop("deleted", None)
+            self._save_edited_plan(
+                db,
+                identifier,
+                batch,
+                plan,
+                data,
+                "Opération restaurée dans le lot",
+                before,
+            )
+
+    def edit_operation(
+        self,
+        identifier,
+        batch_id,
+        index,
+        version,
+        destination=None,
+        swap=None,
+        transfers=None,
+    ):
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            data, batch, plan, operation = self._operation_context(
+                db, identifier, batch_id, index, version
+            )
+            before = deepcopy(operation)
+            if plan.get("mode") == "asset_group":
+                from core.asset_groups import individual_plan
+
+                ids = operation.get("asset_moves") or operation.get("asset_ids")
+                if not ids:
+                    raise ValueError(
+                        "Identifiants manquants pour modifier ce déplacement."
+                    )
+                assets = [
+                    dict(row)
+                    for row in db.execute(
+                        "SELECT * FROM tracked_assets WHERE workspace=?", (identifier,)
+                    )
+                ]
+                replacement = individual_plan(
+                    data,
+                    [ids[0]],
+                    assets,
+                    {ids[0]: {"destination": destination, "swap": swap}},
+                )["groups"][0]
+            else:
+                if not transfers:
+                    raise ValueError("L’opération doit contenir des déplacements.")
+                parsed = [Transfer(**move) for move in transfers]
+                if any(
+                    t.source not in data.rooms or t.destination not in data.rooms
+                    for t in parsed
+                ):
+                    raise ValueError("Source ou destination inconnue.")
+                replacement = deepcopy(operation)
+                replacement["transfers"] = [asdict(move) for move in parsed]
+                destination = operation["room"]
+                if destination not in {t.destination for t in parsed}:
+                    destination = next(
+                        (
+                            t.destination
+                            for t in parsed
+                            if data.rooms.get(t.destination)
+                            and data.rooms[t.destination].room_type == "classroom"
+                        ),
+                        parsed[-1].destination,
+                    )
+                replacement["room"] = destination
+                incoming = next(
+                    (t for t in parsed if t.destination == destination), parsed[-1]
+                )
+                replacement["source"] = incoming.source
+                replacement["new_model"] = incoming.model
+                outgoing = next((t for t in parsed if t.source == destination), None)
+                if outgoing:
+                    replacement["old_model"] = outgoing.model
+                graph = build_graph(data)
+                routes = [
+                    shortest_route(graph, t.source, t.destination) for t in parsed
+                ]
+                if any(route is None for route in routes):
+                    raise ValueError("Un déplacement n’a pas de trajet renseigné.")
+                replacement["delivery_m"] = (
+                    sum(route.distance_m for route in routes)
+                    if all(route.distance_m is not None for route in routes)
+                    else None
+                )
+                replacement["distance_type"] = " / ".join(
+                    sorted({route.distance_label for route in routes})
+                )
+            plan["groups"][index] = replacement
+            self._save_edited_plan(
+                db,
+                identifier,
+                batch,
+                plan,
+                data,
+                "Opération modifiée dans le lot",
+                before,
+            )
+
+    def delete_batch(self, identifier, batch_id):
+        """Retire un lot sans annuler les mouvements physiques déjà confirmés."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            batch = db.execute(
+                "SELECT * FROM batches WHERE id=? AND workspace=?",
+                (batch_id, identifier),
+            ).fetchone()
+            if not batch:
+                raise ValueError("Ce lot n'existe plus.")
+            plan = json.loads(batch["plan"])
+            if plan.get("hidden"):
+                raise ValueError("Ce lot a déjà été supprimé de la liste.")
+            plan["hidden"] = True
+            plan["edit_version"] = plan.get("edit_version", 0) + 1
+            status = batch["status"]
+            if status in {"Préparé", "Partiel"}:
+                status = "Annulé"
+            db.execute(
+                "UPDATE batches SET plan=?, status=? WHERE id=? AND workspace=?",
+                (json.dumps(plan, ensure_ascii=False), status, batch_id, identifier),
+            )
+            self._event(
+                db,
+                identifier,
+                "Lot retiré de la liste",
+                batch["name"],
+                {"batch": batch_id},
+            )
+
+    def archive_batch(self, identifier, batch_id, hidden=True):
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            batch = db.execute(
+                "SELECT * FROM batches WHERE id=? AND workspace=?",
+                (batch_id, identifier),
+            ).fetchone()
+            if not batch or batch["status"] not in {"Annulé", "Terminé"}:
+                raise ValueError(
+                    "Seul un lot annulé ou terminé peut être retiré de la liste."
+                )
+            plan = json.loads(batch["plan"])
+            plan["hidden"] = bool(hidden)
+            db.execute(
+                "UPDATE batches SET plan=? WHERE id=?",
+                (json.dumps(plan, ensure_ascii=False), batch_id),
+            )
+            self._event(
+                db,
+                identifier,
+                "Lot retiré de la liste" if hidden else "Lot réaffiché",
+                batch["name"],
+                {"batch": batch_id},
             )
 
     def cancel_batch(self, identifier, batch_id):

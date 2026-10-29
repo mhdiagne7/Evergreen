@@ -27,12 +27,11 @@ def test_dashboard_and_import_validation(application):
     app, store, key = application
     app.run()
     assert not app.exception
-    assert app.main.title[0].value == "Votre parc, en un coup d’œil"
+    assert app.main.title[0].value == "Vue d’ensemble du parc"
     assert app.metric[1].value == "6"
     assert not any(workspace["id"] == "demo" for workspace in store.list_workspaces())
     app.switch_page("ui/pages/data.py").run()
-    app.button(key="import_apply").click().run()
-    assert any("Sélectionne un fichier" in error.value for error in app.error)
+    assert app.main.title[0].value == "Vue d’ensemble du parc"
     assert not app.exception
 
 
@@ -75,11 +74,6 @@ def test_receipt_needs_no_origin_and_persists(application):
     app.switch_page("ui/pages/receipts.py").run()
     app.selectbox(key="receipt_model").select("New")
     app.number_input(key="receipt_quantity").set_value(3)
-    next(
-        button for button in app.button if button.label == "Enregistrer l'arrivage"
-    ).click().run()
-    assert store.load(key)[0].inventory[CENTRAL_STOCK, "New"] == 2
-    app.checkbox(key="receipt_confirm").check()
     next(
         button for button in app.button if button.label == "Enregistrer l'arrivage"
     ).click().run()
@@ -128,7 +122,7 @@ def test_import_diagnostics_are_collapsed_without_yellow_banner(application):
     assert not app.warning
     assert not any("Contrôle conservé" in item.value for item in app.caption)
     app.switch_page("ui/pages/data.py").run()
-    assert any("Contrôle conservé" in item.value for item in app.caption)
+    assert not any("Contrôle conservé" in item.value for item in app.caption)
 
 
 def test_default_homogeneity_can_save_a_campus_cycle(tmp_path, monkeypatch):
@@ -223,17 +217,17 @@ def test_stale_lot_cannot_be_confirmed_in_ui(application):
     )
 
 
-def test_backup_available_without_central_stock(application):
+def test_backup_backend_remains_available_without_data_tab(application):
     from sample_data import routing_data
 
     app, store, _ = application
-    key = store.create_workspace("Réseau importé sans stock MRT", routing_data())
+    key = store.create_workspace("Sans stock MRT", routing_data())
     app.run()
-    app.switch_page("ui/pages/data.py").run()
-    app.selectbox(key="workspace").select(key).run()
-    app.button(key="prepare_backup").click().run()
-    assert not app.exception
-    assert app.session_state.backup_bytes.startswith(b"SQLite format 3")
+    assert not any(
+        "Données et sauvegardes" in link.label for link in app.sidebar.get("page_link")
+    )
+    assert store.backup().startswith(b"SQLite format 3")
+    assert Store(store.path).load(key)[0] == store.load(key)[0]
 
 
 def test_assistant_requires_review_and_never_updates_inventory(
@@ -315,8 +309,8 @@ def test_sidebar_is_minimal_and_buildings_routes_button_navigates(application):
 def test_workspace_choice_survives_leaving_data_page(application):
     app, store, first = application
     store.create_workspace("Autre inventaire", import_owned_computers(OWNED))
+    app.session_state.workspace = first
     app.run().switch_page("ui/pages/data.py").run()
-    app.selectbox(key="workspace").select(first).run()
     app.switch_page("ui/pages/home.py").run()
     app.switch_page("ui/pages/buildings.py").run()
     assert app.session_state.workspace == first
@@ -545,3 +539,295 @@ if group['status']=='Brouillon':
     assert not app.exception
     assert groups.groups(workspace)[0]["status"] == "Planifié"
     assert store.load(workspace)[0] == before
+
+
+def test_saved_changes_survive_restart_and_refresh_all_inventory_views(application):
+    from core.asset_groups import GroupStore
+    from core.model_catalog import inventory_catalog_rows
+    from ui.model_presence import installed_rooms
+
+    app, store, workspace = application
+    groups = GroupStore(store)
+    initial = store.change_token(workspace)
+    source = next(a for a in groups.assets(workspace) if a["room"] == "CBY-101")
+    revision = store.load(workspace)[2]
+    identifier = groups.save_many(
+        workspace,
+        revision,
+        [{"name": "Groupe enregistré", "description": "", "members": [source["id"]]}],
+    )[0]
+    created = store.change_token(workspace)
+    assert created != initial and created[0] == initial[0]
+    groups.update(workspace, identifier, 0, "Groupe renommé", "", [source["id"]])
+    assert store.change_token(workspace) != created
+    store.receive_many(
+        workspace, [{"model": "Nouveau modèle réel", "quantity": 3}], revision
+    )
+    received = store.change_token(workspace)
+    batch = groups.plan(
+        workspace, identifier, 1, store.load(workspace)[2], CENTRAL_STOCK, save=True
+    )
+    before = store.load(workspace)[0]
+    assert before.inventory["CBY-101", "Old"] == 1
+    store.confirm_batch(workspace, batch, [0], "Déplacement physique confirmé")
+    reopened = Store(store.path)
+    data, models, _, _ = reopened.load(workspace)
+    assert reopened.change_token(workspace) != received
+    assert "Nouveau modèle réel" in models
+    assert data.inventory[CENTRAL_STOCK, "Nouveau modèle réel"] == 3
+    assert not any(row["Salle"] == "CBY-101" for row in installed_rooms(data))
+    assets = GroupStore(reopened).assets(workspace)
+    assert next(a for a in assets if a["id"] == source["id"])["room"] == CENTRAL_STOCK
+    assert any(
+        row["Modèle"] == "Nouveau modèle réel" and row["Postes"] == 3
+        for row in inventory_catalog_rows(data, assets)
+    )
+    assert GroupStore(reopened).groups(workspace)[0]["name"] == "Groupe renommé"
+    app.run().switch_page("ui/pages/models.py").run()
+    assert not app.exception
+    assert "Nouveau modèle réel" in set(app.dataframe[0].value["Modèle"])
+
+
+def test_lot_operation_menu_edits_deletes_and_restores_without_inventory_change(
+    application,
+):
+    from core.asset_groups import GroupStore
+
+    app, store, workspace = application
+    groups = GroupStore(store)
+    assets = groups.assets(workspace)
+    first = next(a for a in assets if a["room"] == "CBY-101")
+    partner = next(
+        a for a in assets if a["room"] == "FTX-147" and a["model"] == "Other"
+    )
+    rev = store.load(workspace)[2]
+    group = groups.save_many(
+        workspace,
+        rev,
+        [{"name": "Lot à gérer", "description": "", "members": [first["id"]]}],
+    )[0]
+    batch = groups.plan(workspace, group, 0, rev, CENTRAL_STOCK, save=True)
+    before = store.load(workspace)[0]
+    app.run()
+    app.session_state.selected_lot = batch
+    app.switch_page("ui/pages/lot.py").run()
+    app.button(key=f"lot_modify_{batch}_0").click().run()
+    assert not app.exception
+    prefix = f"lot_edit_{batch}_0_0_"
+    app.selectbox(key=prefix + "destination").select("FTX-147").run()
+    app.selectbox(key=prefix + "swap").select(partner["id"]).run()
+    app.button(key=prefix + "save").click().run()
+    assert not app.exception
+    assert store.batches(workspace)[0]["plan"]["groups"][0]["swap"]
+    app.button(key=f"lot_delete_{batch}_0").click().run()
+    assert not app.exception
+    assert store.batches(workspace)[0]["status"] == "Annulé"
+    app.button(key=f"lot_restore_{batch}_0").click().run()
+    assert not app.exception
+    assert store.batches(workspace)[0]["status"] == "Préparé"
+    assert store.load(workspace)[0] == before
+
+
+def test_group_editor_dialog_preserves_hidden_members_and_cancelled_changes(
+    application,
+):
+    from core.asset_groups import GroupStore
+
+    app, store, workspace = application
+    groups = GroupStore(store)
+    ids = [a["id"] for a in groups.assets(workspace) if a["room"].startswith("CBY-")]
+    identifier = groups.save_many(
+        workspace,
+        store.load(workspace)[2],
+        [
+            {
+                "name": "Nom initial",
+                "description": "Description initiale",
+                "members": ids,
+            }
+        ],
+    )[0]
+    before = store.load(workspace)[0]
+    app.run().switch_page("ui/pages/regroup.py").run()
+    assert not any(e.label == "Modifier ou supprimer le groupe" for e in app.expander)
+    app.button(key="ag_open_group_editor").click().run()
+    app.text_input(key="ag_editor_name").set_value("Nom modifié").run()
+    app.text_area(key="ag_editor_description").set_value("Description modifiée").run()
+    app.button(key="ag_editor_open_map").click().run()
+    assert not app.exception
+    app.button(key="ag_editor_map_cancel").click().run()
+    assert app.text_input(key="ag_editor_name").value == "Nom modifié"
+    app.button(key="ag_editor_cancel").click().run()
+    assert groups.groups(workspace)[0]["name"] == "Nom initial"
+    app.button(key="ag_open_group_editor").click().run()
+    assert app.text_input(key="ag_editor_name").value == "Nom initial"
+    app.multiselect(key="ag_editor_filter_room").set_value(["CBY-101"]).run()
+    app.text_input(key="ag_editor_name").set_value("Groupe renommé").run()
+    app.button(key="ag_editor_save").click().run()
+    assert not app.exception
+    saved = next(g for g in groups.groups(workspace) if g["id"] == identifier)
+    assert saved["name"] == "Groupe renommé" and set(saved["members"]) == set(ids)
+    assert store.load(workspace)[0] == before
+
+
+def test_group_editor_can_remove_filtered_members_and_reject_empty_group(application):
+    from core.asset_groups import GroupStore
+
+    app, store, workspace = application
+    groups = GroupStore(store)
+    assets = [a for a in groups.assets(workspace) if a["room"].startswith("CBY-")]
+    identifier = groups.save_many(
+        workspace,
+        store.load(workspace)[2],
+        [{"name": "Groupe", "description": "", "members": [a["id"] for a in assets]}],
+    )[0]
+    before = store.load(workspace)[0]
+    app.run().switch_page("ui/pages/regroup.py").run()
+    app.button(key="ag_open_group_editor").click().run()
+    app.multiselect(key="ag_editor_filter_room").set_value(["CBY-101"]).run()
+    app.button(key="ag_editor_clear_visible").click().run()
+    app.button(key="ag_editor_save").click().run()
+    assert not app.exception
+    saved = next(g for g in groups.groups(workspace) if g["id"] == identifier)
+    assert len(saved["members"]) == 1
+    assert (
+        next(a for a in assets if a["id"] == saved["members"][0])["room"] == "CBY-102"
+    )
+    app.button(key="ag_open_group_editor").click().run()
+    app.button(key="ag_editor_clear_visible").click().run()
+    app.button(key="ag_editor_save").click().run()
+    assert not app.exception and app.error
+    assert len(groups.groups(workspace)[0]["members"]) == 1
+    assert store.load(workspace)[0] == before
+
+
+def test_swap_dialog_selects_either_group_or_rest_of_campus_and_keeps_separate_queues(
+    application,
+):
+    from core.asset_groups import GroupStore
+
+    _, store, workspace = application
+    groups = GroupStore(store)
+    assets = groups.assets(workspace)
+    first = next(a for a in assets if a["room"] == "CBY-101")
+    second = next(a for a in assets if a["room"] == "CBY-102")
+    rev = store.load(workspace)[2]
+    source, target = groups.save_many(
+        workspace,
+        rev,
+        [
+            {"name": "Groupe 1", "description": "", "members": [first["id"]]},
+            {
+                "name": "Groupe 2",
+                "description": "",
+                "members": [first["id"], second["id"]],
+            },
+        ],
+    )
+    before = store.load(workspace)[0]
+    script = (
+        """
+import streamlit as st
+from types import SimpleNamespace
+from core.store import Store
+from core.asset_groups import GroupStore
+from ui.asset_groups import swaps_dialog
+store=Store(DB_PATH)
+groups=GroupStore(store)
+workspace=WORKSPACE
+original=st.dataframe
+def selectable(rows,*args,**kwargs):
+    key=kwargs.get('key','')
+    if key.startswith('ag_swap_left_') or key.startswith('ag_swap_right_'):
+        st.session_state['observed_left' if key.startswith('ag_swap_left_') else 'observed_right']=rows
+        return SimpleNamespace(selection=SimpleNamespace(rows=[0] if rows else []))
+    return original(rows,*args,**kwargs)
+st.dataframe=selectable
+group=next(g for g in groups.groups(workspace) if g['id']==GROUP_ID)
+if group['status']=='Brouillon':
+    assets=groups.assets(workspace)
+    data,_,revision,_=store.load(workspace)
+    swaps_dialog(groups,workspace,data,revision,assets,[],group)
+""".replace("DB_PATH", repr(str(store.path)))
+        .replace("WORKSPACE", repr(workspace))
+        .replace("GROUP_ID", repr(source))
+    )
+    app = AppTest.from_string(script).run()
+    assert app.selectbox(key="ag_swap_source_group").value == source
+    assert app.selectbox(key="ag_swap_target_group").value is None
+    app.button(key="ag_swap_add").click().run()
+    assert len(app.session_state["ag_swap_queue"]["pairs"]) == 1
+    app.selectbox(key="ag_swap_target_group").select(target).run()
+    assert not app.exception
+    assert app.session_state["ag_swap_queue"]["pairs"] == []
+    assert {row["Salle actuelle"] for row in app.session_state["observed_right"]} == {
+        "CBY-102"
+    }
+    app.selectbox(key="ag_swap_target_group").select(None).run()
+    assert len(app.session_state["ag_swap_queue"]["pairs"]) == 1
+    app.selectbox(key="ag_swap_target_group").select(target).run()
+    app.selectbox(key="ag_swap_source_group").select(target).run()
+    assert app.selectbox(key="ag_swap_target_group").value is None
+    assert all(
+        row["Salle actuelle"] not in {"CBY-101", "CBY-102"}
+        for row in app.session_state["observed_right"]
+    )
+    app.selectbox(key="ag_swap_source_group").select(source).run()
+    app.selectbox(key="ag_swap_target_group").select(target).run()
+    app.button(key="ag_swap_add").click().run()
+    next(
+        box
+        for box in app.checkbox
+        if box.label == "Je confirme ces échanges à réaliser"
+    ).check().run()
+    app.button(key="ag_swap_save").click().run()
+    assert not app.exception
+    assert store.batches(workspace)[0]["name"] == "Groupe 1 ⇄ Groupe 2"
+    assert store.load(workspace)[0] == before
+
+
+def test_history_can_undo_a_confirmed_swap_with_explicit_reason(application):
+    from core.asset_groups import GroupStore
+
+    app, store, workspace = application
+    groups = GroupStore(store)
+    assets = groups.assets(workspace)
+    first = next(a for a in assets if a["room"] == "CBY-101")
+    second = next(a for a in assets if a["room"] == "FTX-147" and a["model"] == "Other")
+    before = store.load(workspace)[0]
+    rev = store.load(workspace)[2]
+    group = groups.save_many(
+        workspace,
+        rev,
+        [{"name": "Test annulable", "description": "", "members": [first["id"]]}],
+    )[0]
+    batch = groups.plan(
+        workspace,
+        group,
+        0,
+        rev,
+        assignments={
+            first["id"]: {"destination": second["room"], "swap": second["id"]}
+        },
+        save=True,
+    )
+    store.confirm_batch(workspace, batch, [0], "Swap de test")
+    app.run().switch_page("ui/pages/history.py").run()
+    app.button(key="history_swap_undo_open").click().run()
+    assert not app.exception
+    rev = store.load(workspace)[2]
+    prefix = f"lot_undo_{batch}_0_{rev}_0_"
+    assert app.button(key=prefix + "save").disabled
+    app.text_input(key=prefix + "note").set_value(
+        "Confirmation de test saisie par erreur"
+    ).run()
+    app.checkbox(key=prefix + "confirm").check().run()
+    app.button(key=prefix + "save").click().run()
+    assert not app.exception
+    assert store.batches(workspace)[0]["status"] == "Annulé"
+    assert {key: q for key, q in store.load(workspace)[0].inventory.items() if q} == {
+        key: q for key, q in before.inventory.items() if q
+    }
+    assert any(
+        event["kind"] == "Swaps confirmés annulés" for event in store.history(workspace)
+    )

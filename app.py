@@ -6,6 +6,7 @@ from pathlib import Path
 import streamlit as st
 
 from core.store import DEFAULT_DB, Store
+from ui.common import watch_inventory_changes
 from ui.imports import bootstrap_inventory
 from ui.navigation import PAGES, TITLES
 
@@ -38,6 +39,7 @@ def main():
         st.divider()
     identifier = st.session_state.get("workspace") if ids else None
     if identifier:
+        rendered_token = store.change_token(identifier)
         data, models, revision, label = store.load(identifier)
         previous = st.session_state.get("active_workspace")
         if previous != identifier:
@@ -70,13 +72,15 @@ def main():
             "home",
             "buildings",
             "computer_models",
+            "models",
             "regroup",
             "lots",
         ):
             st.page_link(PAGES[name], label=TITLES[name])
-        st.caption("TENIR À JOUR")
-        for name in ("stock", "models", "history", "data", "routes"):
+        for name in ("stock", "history", "routes"):
             st.page_link(PAGES[name], label=TITLES[name])
+    if identifier:
+        watch_inventory_changes(store, identifier, rendered_token)
     page.run()
 
 

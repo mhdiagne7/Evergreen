@@ -10,9 +10,9 @@ from core.export import csv_bytes
 from core.homogeneity import building_models, dominant_models
 from core.store import DEFAULT_DB, Store
 from map_view import campus_map
-from ui.batches import batches_view
+from ui.batches import batches_view, swap_undo_from_history
 from ui.block_planning import block_planning
-from ui.common import table
+from ui.common import refresh, table
 from ui.dashboard import building_detail
 from ui.distances import google_distances
 from ui.homogeneity import homogenization
@@ -20,7 +20,7 @@ from ui.imports import import_form
 from ui.model_presence import model_presence_detail, models_presence
 from ui.navigation import PAGES, go, heading
 from ui.planning import manual_planning
-from ui.stock import backup_view, models_view, stock_view
+from ui.stock import models_view, stock_view
 
 
 def card(title, description, target, key=None, **selection):
@@ -48,7 +48,7 @@ def render(name):
     batches = store.batches(identifier)
     active = [b for b in batches if b["status"] in {"Préparé", "Partiel"}]
     if name == "home":
-        heading("Votre parc, en un coup d’œil")
+        heading("Vue d’ensemble du parc")
         st.write(
             "Consultez les bâtiments, préparez les interventions et suivez ce qui a été réalisé."
         )
@@ -158,13 +158,30 @@ def render(name):
                 "Aucun lot dans cette vue. Préparez un regroupement pour commencer."
             )
         for batch in shown:
-            card(
-                batch["name"],
-                f"{batch['status']} · {len(batch['plan']['groups'])} opération(s)",
-                "lot",
-                "lot_" + batch["id"],
-                selected_lot=batch["id"],
-            )
+            with st.container(border=True):
+                title, actions = st.columns([12, 1])
+                with title:
+                    st.subheader(batch["name"])
+                with actions:
+                    with st.popover("⋮", help="Actions du lot"):
+                        if st.button(
+                            "Supprimer",
+                            key="delete_lot_" + batch["id"],
+                            icon=":material/delete:",
+                        ):
+                            try:
+                                store.delete_batch(identifier, batch["id"])
+                            except ValueError as error:
+                                st.error(str(error))
+                            else:
+                                refresh("Lot supprimé de la liste.")
+                count = sum(
+                    not operation.get("deleted")
+                    for operation in batch["plan"]["groups"]
+                )
+                st.write(f"{batch['status']} · {count} opération(s)")
+                if st.button("Ouvrir →", key="lot_" + batch["id"]):
+                    go("lot", selected_lot=batch["id"])
         st.page_link(PAGES["regroup"], label="Préparer un regroupement →")
     elif name == "lot":
         heading("Détail du lot", "lots")
@@ -175,7 +192,13 @@ def render(name):
         batches_view(store, identifier, data, revision, batch_id=selected)
     elif name == "stock":
         heading("Stock central", "home")
-        st.page_link(PAGES["receipts"], label="Enregistrer une réception →")
+        if st.button(
+            "Enregistrer une réception →",
+            type="primary",
+            width="stretch",
+            key="stock_open_receipts",
+        ):
+            go("receipts")
         stock_view(*args)
     elif name == "receipts":
         heading("Recevoir du matériel", "stock")
@@ -185,6 +208,7 @@ def render(name):
         models_view(*args)
     elif name == "history":
         heading("Historique", "home")
+        swap_undo_from_history(store, identifier, data, revision)
         events = store.history(identifier)
         table(
             [
@@ -200,34 +224,7 @@ def render(name):
                 "text/csv",
             )
     elif name == "data":
-        heading("Données et sauvegardes", "home")
-        spaces = store.list_workspaces()
-        labels = {space["id"]: space["name"] for space in spaces}
-        with st.expander("Inventaire et informations de planification"):
-            st.selectbox(
-                "Inventaire actif",
-                list(labels),
-                format_func=labels.get,
-                key="workspace",
-            )
-            st.caption(
-                "Données enregistrées sur cet ordinateur. Aucun envoi automatique vers GitHub."
-            )
-            if data.import_notes:
-                st.markdown("**Détails du contrôle de l’import**")
-                for note in data.import_notes:
-                    st.caption(note)
-            if data.distance_mode == "geodesic":
-                st.markdown("**Repères de planification et distances**")
-                st.caption(
-                    "Stock central à Morisset. Les distances de marche renseignées sont utilisées quand disponibles, sinon les distances à vol d’oiseau. Les déplacements intérieurs ne sont pas évalués. Les capacités de travail des salles correspondent aux postes recensés à l’import."
-                )
-        st.write(
-            "Un import crée un espace indépendant. Les réceptions et les lots mettent à jour l’espace actif sans remplacer son référentiel de salles."
-        )
-        import_form(store)
-        stock_view(*args, section="settings")
-        backup_view(store, data)
+        go("home")
     elif name == "assistant":
         heading("Assistant IA local", "home")
         from ui.assistant import assistant_view

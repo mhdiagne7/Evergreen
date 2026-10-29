@@ -9,6 +9,13 @@ from core.graph import build_graph
 from core.routing import shortest_route
 
 
+@st.fragment(run_every=3)
+def watch_inventory_changes(store, identifier, rendered_token):
+    """Relire la page seulement lorsqu’une action enregistrée change sa source."""
+    if store.change_token(identifier) != rendered_token:
+        st.rerun()
+
+
 def table(rows):
     if rows:
         config = {
@@ -47,9 +54,14 @@ def operation_rows(plan):
             ),
             "Livraison (m)": group["delivery_m"],
             "Distance": group["distance_type"],
-            "État": "Fait" if group.get("completed") else "À faire",
+            "État": "Swap annulé"
+            if group.get("undone")
+            else "Fait"
+            if group.get("completed")
+            else "À faire",
         }
         for index, group in enumerate(plan["groups"], 1)
+        if not group.get("deleted")
     ]
 
 
@@ -57,6 +69,8 @@ def transfer_rows(plan, data, for_export=False):
     graph = build_graph(data)
     rows = []
     for group in plan["groups"]:
+        if group.get("deleted") or group.get("undone"):
+            continue
         for index, move in enumerate(group["transfers"], 1):
             route = shortest_route(graph, move["source"], move["destination"])
             google_export = (
@@ -95,6 +109,8 @@ def transfer_rows(plan, data, for_export=False):
 def transport_summary(plan, data):
     totals = {}
     for group in plan["groups"]:
+        if group.get("deleted") or group.get("undone"):
+            continue
         for move in group["transfers"]:
             origin = data.rooms[move["source"]].building
             destination = data.rooms[move["destination"]].building

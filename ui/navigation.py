@@ -3,7 +3,7 @@
 import streamlit as st
 
 TITLES = {
-    "home": "Accueil",
+    "home": "Vue d’ensemble du parc",
     "map": "Carte du campus",
     "assistant": "Assistant IA local",
     "buildings": "Bâtiments",
